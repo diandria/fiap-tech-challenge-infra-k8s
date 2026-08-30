@@ -1,0 +1,10 @@
+terraform {
+  required_version = ">= 1.10"
+
+  required_providers {
+    aws  = { source = "hashicorp/aws", version = "~> 5.0" }
+    helm = { source = "hashicorp/helm", version = "~> 2.17" }
+    # Usado pelos addons e pela verificacao dos recursos criados via Helm.
+    kubernetes = { source = "hashicorp/kubernetes", version = "~> 2.35" }
+  }
+}
