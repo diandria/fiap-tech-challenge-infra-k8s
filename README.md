@@ -1,2 +1,299 @@
-# fiap-tech-challenge-infra-k8s
-Infraestrutura Kubernetes (EKS), observabilidade e API Gateway do Tech Challenge - Fase 3
+# Infraestrutura Kubernetes — Tech Challenge Fase 3
+
+Provisiona o **cluster EKS**, a **stack de observabilidade** e o **API Gateway** que é a porta de
+entrada de todo o sistema.
+
+---
+
+## Para que serve
+
+A aplicação da oficina roda em contêineres e precisa de um lugar para rodar, de um caminho de entrada
+controlado e de instrumentação que mostre o que está acontecendo. Este repositório entrega os três.
+
+| O que provisiona | Para quê |
+|---|---|
+| Cluster EKS e node group | onde a aplicação roda |
+| Addons (CNI, CoreDNS, metrics-server, EBS CSI) | rede, DNS, HPA e volumes |
+| AWS Load Balancer Controller e NLB interno | expõe a aplicação **dentro** da VPC |
+| Prometheus, Grafana, Alertmanager | métricas |
+| Loki e Promtail | logs |
+| Tempo | tracing distribuído |
+| API Gateway e VPC Link | ponto único de entrada, com throttling |
+
+## O que este repositório **não** faz
+
+- **não cria VPC** — consome a default da região
+- **não cria o banco** — isso é do repositório de infraestrutura do banco, cujo estado é lido aqui
+- **não cria role de IAM** — o Learner Lab restringe; cluster e nós assumem a `LabRole` existente
+- **não faz o deploy da aplicação** — os pods vêm do repositório da aplicação. O **Service** mora
+  aqui, porque é ele que faz nascer o NLB de que o gateway depende
+
+---
+
+## Arquitetura
+
+```mermaid
+flowchart TB
+    CLIENTE(["Cliente"])
+
+    subgraph AWS["AWS · us-east-1"]
+        AGW["API Gateway HTTP<br/>CORS · throttling · log de acesso"]
+
+        subgraph VPC["VPC default · 172.31.0.0/16"]
+            VL["VPC Link"]
+            NLB["NLB interno<br/>sem endereço público"]
+
+            subgraph EKS["EKS 1.34 · 2 × t3.medium"]
+                subgraph NSAPP["namespace car-repair-shop"]
+                    PODS["Pods da aplicação<br/>(deploy no M8)"]
+                end
+                subgraph NSOBS["namespace observability"]
+                    PROM["Prometheus"]
+                    GRAF["Grafana"]
+                    LOKI["Loki"]
+                    TEMPO["Tempo"]
+                end
+            end
+
+            RDS[("RDS PostgreSQL<br/>outro repositório")]
+        end
+    end
+
+    CLIENTE -->|HTTPS| AGW
+    AGW --> VL --> NLB --> PODS
+    PODS -->|5432| RDS
+    PODS -->|"métricas"| PROM
+    PODS -->|"logs via Promtail"| LOKI
+    PODS -->|"traces OTLP 4318"| TEMPO
+    PROM --> GRAF
+    LOKI <-->|"trace_id"| TEMPO
+    LOKI --> GRAF
+    TEMPO --> GRAF
+
+    style NLB fill:#2d6a9f,color:#fff
+    style AGW fill:#3d7a4a,color:#fff
+    style CLIENTE fill:#555,color:#fff
+```
+
+**O caminho de entrada é único.** O NLB é interno e não tem endereço público: a única forma de
+alcançar a aplicação de fora é pelo API Gateway, que aplica throttling e CORS. Um NLB público criaria
+um caminho paralelo que ignora esses controles — e ninguém saberia que ele existe.
+
+A seta de ida e volta entre Loki e Tempo é a correlação: de um log lento se chega ao trace, e de um
+span se chega às linhas de log daquela requisição.
+
+---
+
+## Tecnologias
+
+| Ferramenta | Versão | Para quê |
+|---|---|---|
+| Terraform | >= 1.10 | provisionamento |
+| Provider AWS | ~> 5.0 | cluster, rede, gateway |
+| Provider Helm | ~> 2.17 | observabilidade e controller |
+| Kubernetes (EKS) | **1.34** | orquestração |
+| kube-prometheus-stack | 88.6.1 | métricas |
+| Loki / Promtail | 7.3.0 / 6.17.1 | logs |
+| Tempo | 1.24.4 | tracing |
+| tflint / trivy | 0.64 / 0.74 | análise estática |
+
+**A versão do Kubernetes não é escolha estética.** A AWS move versões antigas para *suporte
+estendido*, cobrado a **USD 0,60/hora** contra **USD 0,10/hora** do padrão — seis vezes mais pelo
+mesmo cluster. Conferir antes de mudar:
+
+```bash
+aws eks describe-cluster-versions \
+  --query 'clusterVersions[].[clusterVersion,versionStatus]' --output table
+```
+
+---
+
+## Pré-requisitos
+
+### 1. Credencial do Learner Lab
+
+**Start Lab**, esperar a bolinha verde, **AWS Details → AWS CLI → Show**, colar em
+`~/.aws/credentials`.
+
+> A credencial expira em ~4h **e é revogada quando a sessão do lab para**. O sintoma da revogação é
+> uma negação explícita citando a policy `voc-cancel-cred` — nesse caso o `sts get-caller-identity`
+> ainda responde, mas nenhuma operação real passa.
+
+### 2. O repositório do banco aplicado
+
+Este repositório lê o estado do banco. Sem ele aplicado, o `terraform apply` falha ao resolver os
+outputs. Conferir:
+
+```bash
+echo 'data.terraform_remote_state.db.outputs.db_endpoint' | terraform console
+```
+
+### 3. Bucket de estado
+
+O mesmo do repositório do banco, com a chave `infra-k8s/terraform.tfstate`. A criação está
+documentada lá.
+
+---
+
+## Execução local
+
+Em repositório de infraestrutura, "rodar local" é executar o Terraform da sua máquina contra a AWS.
+
+```bash
+terraform init
+terraform plan          # leia antes de aplicar
+terraform apply         # cluster leva 10-15min, node group outros 5-10
+```
+
+Antes de abrir PR, o mesmo ciclo do CI:
+
+```bash
+terraform fmt -recursive
+terraform validate
+python3 scripts/check-no-public-ingress.py
+tflint --init && tflint
+trivy config --severity HIGH,CRITICAL .
+```
+
+### Acessar o cluster
+
+```bash
+aws eks update-kubeconfig --name car-repair-shop --region us-east-1
+kubectl get nodes
+```
+
+### Acessar o Grafana
+
+`ClusterIP` de propósito — expor criaria um segundo caminho de entrada, fora do gateway.
+
+```bash
+kubectl port-forward -n observability svc/kube-prometheus-stack-grafana 3000:80
+
+# usuario: admin
+kubectl get secret -n observability grafana-admin \
+  -o jsonpath='{.data.admin-password}' | base64 -d
+```
+
+---
+
+## Deploy
+
+| Evento | O que roda |
+|---|---|
+| PR | fmt, validate, ingress fechado, tflint, trivy, e o plano comentado no PR |
+| Merge na `main` | apply, e depois **verifica**: cluster `ACTIVE`, nós `Ready`, observabilidade de pé |
+| Botão **Destroy** | remove Services de LoadBalancer, destrói, confere a conta |
+
+Renovar os secrets quando a credencial cair:
+
+```bash
+./scripts/refresh-aws-secrets.sh
+```
+
+A validação **não** depende de credencial: quando a chave do lab cai, a revisão perde o plano mas
+mantém o portão.
+
+---
+
+## Runbook
+
+### Subir
+
+```bash
+terraform init && terraform apply
+```
+
+Cerca de 25 minutos no total, com o VPC Link sendo o recurso mais lento.
+
+### Ver o que está custando
+
+```bash
+./scripts/status.sh
+```
+
+### Derrubar
+
+```bash
+./scripts/teardown.sh            # destroy e confere o que sobrou
+./scripts/teardown.sh --sweep    # remove também o que o estado não alcançou
+```
+
+O sweep remove **node group antes do cluster**. Essa ordem não é detalhe: o cluster recusa a remoção
+com node group ativo, e os nós continuam cobrando EC2 enquanto isso.
+
+### Diagnóstico rápido
+
+```bash
+kubectl get nodes
+kubectl get pods -A | grep -v Running
+kubectl top nodes
+kubectl describe nodes | grep -A8 "Allocated resources"
+```
+
+---
+
+## Custo
+
+**Este é o repositório caro da fase.**
+
+| Recurso | Por dia |
+|---|---|
+| EKS control plane (suporte padrão) | USD 2,40 |
+| 2 × t3.medium | USD 2,00 |
+| NLB interno | USD 0,54 |
+| Chave KMS | USD 0,03 |
+| **Total** | **~USD 4,97** |
+
+Somado ao banco (USD 0,51/dia), a stack completa fica em **~USD 5,50/dia**. Com o orçamento de
+USD 50 do Learner Lab, isso dá **cerca de 9 dias** de execução contínua.
+
+**Derrubar entre sessões de trabalho é o que faz o orçamento durar a fase inteira.** Recriar leva ~25
+minutos.
+
+---
+
+## Dimensionamento, e por que `t3.medium`
+
+Dois `t3.small` dariam ~3,2 GiB alocáveis. Medido no cluster real com `t3.medium`:
+
+```
+ip-172-31-16-212   3.22 GiB  1930m cpu  pods=17
+ip-172-31-94-20    3.22 GiB  1930m cpu  pods=17
+--> total: 6.43 GiB
+```
+
+Só os pods de sistema (CNI, kube-proxy, CoreDNS, metrics-server, CSI driver, controller do load
+balancer) consomem ~1 GB, e a observabilidade pede outros ~2 GB. Com `t3.small` não sobraria memória
+para a aplicação.
+
+Há um segundo teto que não é de memória: **17 pods por nó**, limite de ENI do tipo de instância — 34
+no total. A observabilidade usa 12 a 15.
+
+---
+
+## Restrições do Learner Lab que moldaram este código
+
+Não são detalhes de implementação: elas invalidam a maior parte dos exemplos de EKS da internet.
+
+| Restrição | Consequência |
+|---|---|
+| Não é possível criar role de IAM | cluster e nós assumem a `LabRole`; exemplos que criam roles dedicadas não funcionam |
+| **Não há IRSA** | sem provedor OIDC nem trust policy editável, o EBS CSI e o Load Balancer Controller usam a credencial da instância |
+| Hop limit do IMDS vem em 1 | um launch template sobe para 2; sem isso, todo pod que chama a API da AWS falha com `no EC2 IMDS role found` |
+| Subnets da VPC default sem tag | o Load Balancer Controller não acha onde pôr o NLB; as tags são criadas por `aws_ec2_tag` |
+
+---
+
+## Repositórios relacionados
+
+| Repositório | Papel |
+|---|---|
+| [fiap-tech-challenge](https://github.com/diandria/fiap-tech-challenge) | a aplicação que roda neste cluster |
+| [fiap-tech-challenge-infra-db](https://github.com/diandria/fiap-tech-challenge-infra-db) | o banco que a aplicação consome |
+
+A relação com a aplicação é direta: os endpoints publicados aqui alimentam a configuração dela.
+`tempo_otlp_http_endpoint` vira `OTEL_EXPORTER_OTLP_ENDPOINT`, e `db_endpoint`, `db_port`,
+`db_name` e `db_password_parameter` são repassados do estado do banco para montar a conexão.
+
+A documentação da API — **Swagger** em `/api-docs` e a coleção do **Postman** em `postman/` —
+descreve os endpoints que o API Gateway roteia para os pods deste cluster.
