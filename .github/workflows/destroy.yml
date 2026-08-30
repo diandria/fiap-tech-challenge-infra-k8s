@@ -1,0 +1,105 @@
+name: Destroy
+
+# So manual, e com confirmacao digitada. O EKS e o item mais caro da fase:
+# o control plane custa USD 0,10/hora, cerca de cinco vezes o banco.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Digite "production" para confirmar a destruicao'
+        required: true
+        type: string
+      sweep:
+        description: "Remover tambem o que sobrar fora do estado do Terraform"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-apply
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: "1.15.6"
+  AWS_REGION: us-east-1
+
+jobs:
+  destroy:
+    name: Destruir infraestrutura
+    if: inputs.confirm == 'production'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Conferir credencial
+        run: |
+          aws ec2 describe-vpcs --max-items 1 > /dev/null 2>&1 || {
+            echo "::error::Credencial ausente, expirada ou revogada."
+            exit 1
+          }
+
+      - name: terraform init
+        run: terraform init -input=false
+
+      # Os load balancers nascem de Services dentro do cluster, nao do estado
+      # do Terraform. Destruir o cluster sem remove-los antes deixa NLB orfao
+      # cobrando, e o destroy trava na dependencia de rede.
+      - name: Remover Services do tipo LoadBalancer primeiro
+        continue-on-error: true
+        run: |
+          aws eks update-kubeconfig --name car-repair-shop --region "$AWS_REGION" || exit 0
+          kubectl delete svc --all-namespaces \
+            --field-selector spec.type=LoadBalancer --ignore-not-found --timeout=300s || true
+          sleep 60
+
+      - name: terraform destroy
+        run: terraform destroy -auto-approve -input=false -no-color
+
+      - name: Sweep do que sobrou fora do estado
+        if: inputs.sweep
+        run: ./scripts/teardown.sh --sweep --yes
+
+      # Destroy verde nao prova conta limpa: no EKS um destroy parcial deixa
+      # node group cobrando EC2.
+      - name: Confirmar que nada cobravel sobrou
+        run: |
+          leftover=0
+          eks=$(aws eks list-clusters --query 'clusters[]' --output text)
+          ec2=$(aws ec2 describe-instances --filters "Name=instance-state-name,Values=running" \
+                --query 'Reservations[].Instances[].InstanceId' --output text)
+          elb=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[].LoadBalancerArn' --output text)
+          [ -n "$eks" ] && { echo "::warning::Cluster ainda presente: $eks"; leftover=1; }
+          [ -n "$ec2" ] && { echo "::warning::EC2 em execucao: $ec2"; leftover=1; }
+          [ -n "$elb" ] && { echo "::warning::Load balancer presente"; leftover=1; }
+          {
+            echo "### Destruicao concluida"
+            echo ""
+            if [ "$leftover" = "0" ]; then
+              echo "Nada cobravel restante nesta regiao."
+            else
+              echo "**Sobrou recurso cobrando.** Rode de novo com \`sweep\` marcado."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          [ "$leftover" = "0" ]
+
+  recusado:
+    name: Confirmacao invalida
+    if: inputs.confirm != 'production'
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "::error::Confirmacao invalida. Digite exatamente 'production' para destruir."
+          exit 1

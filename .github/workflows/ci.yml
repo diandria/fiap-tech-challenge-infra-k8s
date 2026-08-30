@@ -1,0 +1,143 @@
+name: CI
+
+on:
+  # Sem filtro de branch de destino: as tarefas deste milestone sao PRs
+  # empilhados, que apontam uns para os outros e nao direto para a main.
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  TF_VERSION: "1.15.6"
+  AWS_REGION: us-east-1
+
+jobs:
+  # Portao real: nao depende de credencial da AWS, entao continua valendo
+  # quando a chave temporaria do Learner Lab expira ou e revogada.
+  validate:
+    name: Formato, sintaxe e seguranca
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive -diff
+
+      - name: terraform init
+        run: terraform init -backend=false -input=false
+
+      - name: terraform validate
+        run: terraform validate
+
+      # O trivy nao cobre ingress aberto: verificado no repositorio do banco
+      # que ele reporta zero problemas para ingress 0.0.0.0/0, enquanto acusa
+      # o egress equivalente.
+      - name: Nenhum ingress aberto para a internet
+        run: python3 scripts/check-no-public-ingress.py
+
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.64.0
+
+      - name: tflint
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tflint --init
+          tflint --format compact
+
+      - name: trivy
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
+  plan:
+    name: Plano de mudanca
+    needs: validate
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Conferir credencial antes de tentar
+        id: creds
+        run: |
+          if aws ec2 describe-vpcs --max-items 1 > /dev/null 2>&1; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Credencial da AWS ausente, expirada ou revogada. A do Learner Lab cai quando a sessao do lab para; rode ./scripts/refresh-aws-secrets.sh apos Start Lab."
+          fi
+
+      - name: terraform init
+        if: steps.creds.outputs.ok == 'true'
+        run: terraform init -input=false
+
+      - name: terraform plan
+        id: plan
+        if: steps.creds.outputs.ok == 'true'
+        run: |
+          # Saida de TEXTO, nunca `terraform show -json`: o JSON traz valores
+          # sensiveis em claro, e este repositorio e publico.
+          terraform plan -input=false -no-color -lock=false > plan.txt 2>&1 || true
+          {
+            echo 'stdout<<PLANEOF'
+            tail -c 60000 plan.txt
+            echo 'PLANEOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Comentar o plano no PR
+        if: steps.creds.outputs.ok == 'true'
+        uses: actions/github-script@v7
+        env:
+          PLAN: ${{ steps.plan.outputs.stdout }}
+        with:
+          script: |
+            const marker = '<!-- terraform-plan -->';
+            const body = `${marker}
+            ### Plano do Terraform
+
+            <details><summary>Ver o que vai mudar</summary>
+
+            \`\`\`hcl
+            ${process.env.PLAN}
+            \`\`\`
+
+            </details>`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                comment_id: existing.id, body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: context.issue.number, body,
+              });
+            }

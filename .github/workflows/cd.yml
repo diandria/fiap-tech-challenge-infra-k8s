@@ -1,0 +1,88 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-apply
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: "1.15.6"
+  AWS_REGION: us-east-1
+
+jobs:
+  apply:
+    name: Aplicar infraestrutura
+    runs-on: ubuntu-latest
+    # O EKS leva 10 a 15 minutos para o control plane e outros tantos para o
+    # node group; o padrao de 360 minutos e generoso, mas os passos de espera
+    # abaixo tem limite proprio.
+    timeout-minutes: 60
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Conferir credencial
+        run: |
+          aws ec2 describe-vpcs --max-items 1 > /dev/null 2>&1 || {
+            echo "::error::Credencial da AWS ausente, expirada ou revogada. A do Learner Lab cai quando a sessao do lab para; rode Start Lab e depois ./scripts/refresh-aws-secrets.sh"
+            exit 1
+          }
+
+      - name: terraform init
+        run: terraform init -input=false
+
+      - name: terraform apply
+        run: terraform apply -auto-approve -input=false -no-color
+
+      # Apply verde com cluster em estado invalido e falso positivo: o apply
+      # responde "criei", nao "esta funcionando".
+      - name: Cluster esta ativo
+        run: |
+          status=$(aws eks describe-cluster --name car-repair-shop \
+                   --query 'cluster.status' --output text)
+          echo "status=$status"
+          [ "$status" = "ACTIVE" ] || { echo "::error::Cluster em $status"; exit 1; }
+
+      - name: Nos estao prontos
+        run: |
+          aws eks update-kubeconfig --name car-repair-shop --region "$AWS_REGION"
+          kubectl wait --for=condition=Ready nodes --all --timeout=600s
+          kubectl get nodes
+
+      # A observabilidade e item avaliado da fase: se ela nao subir, o deploy
+      # nao deve passar por verde.
+      - name: Observabilidade respondendo
+        run: |
+          kubectl wait --for=condition=Ready pods --all \
+            -n observability --timeout=600s
+          kubectl get pods -n observability
+
+      - name: Resumo
+        run: |
+          {
+            echo "### Cluster aplicado"
+            echo ""
+            echo '| Item | Valor |'
+            echo '|---|---|'
+            echo "| Versao do Kubernetes | $(aws eks describe-cluster --name car-repair-shop --query 'cluster.version' --output text) |"
+            echo "| Nos prontos | $(kubectl get nodes --no-headers | grep -c ' Ready ') |"
+            echo "| Pods de observabilidade | $(kubectl get pods -n observability --no-headers | wc -l) |"
+            echo ""
+            echo "Custo aproximado de pe: **USD 4,40/dia** (control plane mais dois t3.medium)."
+            echo "Para derrubar: workflow **Destroy**, ou \`./scripts/teardown.sh\`."
+          } >> "$GITHUB_STEP_SUMMARY"
