@@ -5,10 +5,22 @@ data "aws_iam_role" "lab" {
   name = "LabRole"
 }
 
+#trivy:ignore:AVD-AWS-0040
+#trivy:ignore:AVD-AWS-0041
 resource "aws_eks_cluster" "main" {
   name     = local.cluster_name
   role_arn = data.aws_iam_role.lab.arn
   version  = var.cluster_version
+
+  # Sem isto os secrets do cluster ficam apenas com a cifra padrao do disco do
+  # etcd. O cluster guarda, entre outros, a senha do Grafana.
+  # Habilitar e via de mao unica: nao da para remover depois.
+  encryption_config {
+    provider {
+      key_arn = aws_kms_key.eks_secrets.arn
+    }
+    resources = ["secrets"]
+  }
 
   vpc_config {
     subnet_ids = data.aws_subnets.cluster.ids
@@ -18,6 +30,10 @@ resource "aws_eks_cluster" "main" {
     # da aplicacao. O acesso continua exigindo autenticacao IAM.
     endpoint_public_access  = true
     endpoint_private_access = true
+
+    # Restringivel por variavel. Amplo por padrao porque os runners do GitHub
+    # Actions nao tem faixa de IP estavel que caiba no limite de CIDRs do EKS.
+    public_access_cidrs = var.cluster_public_access_cidrs
   }
 
   access_config {
