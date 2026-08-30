@@ -35,3 +35,21 @@ variable "node_instance_type" {
   type        = string
   default     = "t3.medium"
 }
+
+variable "node_desired_size" {
+  description = "Quantidade de nos em regime normal."
+  type        = number
+  default     = 2
+}
+
+variable "node_min_size" {
+  description = "Minimo de nos. Dois para tolerar a perda de um sem derrubar a observabilidade."
+  type        = number
+  default     = 2
+}
+
+variable "node_max_size" {
+  description = "Teto de nos, com folga para o HPA da aplicacao escalar."
+  type        = number
+  default     = 4
+}
