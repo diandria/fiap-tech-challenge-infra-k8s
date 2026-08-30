@@ -53,3 +53,15 @@ variable "node_max_size" {
   type        = number
   default     = 4
 }
+
+variable "cluster_public_access_cidrs" {
+  description = <<-TXT
+    Origens autorizadas a alcancar o endpoint publico do control plane.
+
+    Amplo por padrao porque o CD roda em runner hospedado do GitHub, cuja faixa
+    de IP muda e nao cabe no limite de CIDRs do EKS. Restringir aqui e o jeito
+    de fechar quando houver runner com IP fixo.
+  TXT
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}

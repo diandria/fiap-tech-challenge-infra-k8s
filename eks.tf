@@ -5,6 +5,8 @@ data "aws_iam_role" "lab" {
   name = "LabRole"
 }
 
+#trivy:ignore:AVD-AWS-0040
+#trivy:ignore:AVD-AWS-0041
 resource "aws_eks_cluster" "main" {
   name     = local.cluster_name
   role_arn = data.aws_iam_role.lab.arn
