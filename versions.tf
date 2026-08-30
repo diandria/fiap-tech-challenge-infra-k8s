@@ -6,5 +6,6 @@ terraform {
     helm = { source = "hashicorp/helm", version = "~> 2.17" }
     # Usado pelos addons e pela verificacao dos recursos criados via Helm.
     kubernetes = { source = "hashicorp/kubernetes", version = "~> 2.35" }
+    random     = { source = "hashicorp/random", version = "~> 3.6" }
   }
 }
