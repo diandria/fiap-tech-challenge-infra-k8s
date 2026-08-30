@@ -36,6 +36,12 @@ resource "kubernetes_service_v1" "api" {
   spec {
     type = "LoadBalancer"
 
+    # O AWS Load Balancer Controller grava este campo no Service assim que
+    # assume o balanceador. Sem declara-lo aqui, o Terraform le a diferenca
+    # como divergencia e tenta anular -- o que **recria o Service**, e com ele
+    # o NLB, mudando o DNS e quebrando a integracao do gateway a cada apply.
+    load_balancer_class = "service.k8s.aws/nlb"
+
     selector = {
       app = local.app_service_name
     }
