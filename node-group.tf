@@ -9,6 +9,13 @@ resource "aws_eks_node_group" "main" {
 
   instance_types = [var.node_instance_type]
 
+  # O launch template so ajusta o IMDS; tipo de instancia e AMI continuam
+  # vindo do node group e do EKS.
+  launch_template {
+    id      = aws_launch_template.node.id
+    version = aws_launch_template.node.latest_version
+  }
+
   scaling_config {
     desired_size = var.node_desired_size
     min_size     = var.node_min_size
