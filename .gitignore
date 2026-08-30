@@ -1,0 +1,13 @@
+# O estado pode conter valores sensiveis e este repositorio e publico.
+# Este arquivo existe desde o primeiro commit por isso.
+*.tfstate
+*.tfstate.backup
+*.tfvars
+!*.tfvars.example
+.terraform/
+.terraform.lock.hcl
+
+# Saidas de plan e kubeconfig carregam credencial.
+*.tfplan
+kubeconfig*
+crash.log
