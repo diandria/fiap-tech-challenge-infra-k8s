@@ -295,5 +295,5 @@ A relação com a aplicação é direta: os endpoints publicados aqui alimentam 
 `tempo_otlp_http_endpoint` vira `OTEL_EXPORTER_OTLP_ENDPOINT`, e `db_endpoint`, `db_port`,
 `db_name` e `db_password_parameter` são repassados do estado do banco para montar a conexão.
 
-A documentação da API — **Swagger** em `/api-docs` e a coleção do **Postman** em `postman/` —
+A documentação da API — **Swagger** em `/docs` e a coleção do **Postman** em `postman/` —
 descreve os endpoints que o API Gateway roteia para os pods deste cluster.
