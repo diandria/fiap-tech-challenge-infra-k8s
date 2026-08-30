@@ -11,9 +11,16 @@ variable "environment" {
 }
 
 variable "cluster_version" {
-  description = "Versao do Kubernetes no EKS."
+  description = <<-TXT
+    Versao do Kubernetes no EKS.
+
+    1.34, e nao a 1.31 de versoes anteriores deste plano: 1.31, 1.32 e 1.33
+    entraram em suporte estendido, que a AWS cobra a USD 0,60 por hora contra
+    USD 0,10 do suporte padrao. Seis vezes mais caro pelo mesmo cluster.
+    Conferir com: aws eks describe-cluster-versions
+  TXT
   type        = string
-  default     = "1.31"
+  default     = "1.34"
 }
 
 variable "node_instance_type" {
