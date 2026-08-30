@@ -51,3 +51,8 @@ output "vpc_link_id" {
   description = "Id do VPC Link que alcanca o NLB interno."
   value       = aws_apigatewayv2_vpc_link.main.id
 }
+
+output "ecr_repository_url" {
+  description = "URL do repositorio ECR da aplicacao, consumida pelo CD."
+  value       = aws_ecr_repository.app.repository_url
+}
