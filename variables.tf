@@ -65,3 +65,65 @@ variable "cluster_public_access_cidrs" {
   type        = list(string)
   default     = ["0.0.0.0/0"]
 }
+
+variable "cors_allowed_origins" {
+  description = "Origens autorizadas pelo CORS do gateway."
+  type        = list(string)
+  default     = ["*"]
+}
+
+variable "throttling_rate_limit" {
+  description = "Requisicoes por segundo em regime. Dimensionado para o cluster de dois nos."
+  type        = number
+  default     = 100
+}
+
+variable "throttling_burst_limit" {
+  description = "Pico instantaneo tolerado acima do regime."
+  type        = number
+  default     = 200
+}
+
+variable "public_routes" {
+  description = <<-TXT
+    Rotas que o gateway encaminha para o cluster.
+
+    Lista explicita em vez de curinga: o que nao esta aqui devolve 404 sem
+    alcancar a aplicacao. E assim que a restricao do M7 -- "o endpoint interno
+    de lookup nao e exposto no API Gateway" -- se torna verdadeira na
+    infraestrutura, e nao apenas na intencao.
+
+    Cada prefixo aparece duas vezes de proposito: "/customers" casa a colecao,
+    "/customers/{proxy+}" casa os itens abaixo dela. Uma forma nao cobre a
+    outra.
+
+    Fora da lista de proposito:
+      /auth/customers/lookup  interno, consumido so pela function
+      /metrics                raspado pelo Prometheus de dentro do cluster
+  TXT
+  type        = list(string)
+
+  default = [
+    "POST /auth/login",
+    "POST /auth/register",
+
+    "ANY /customers",
+    "ANY /customers/{proxy+}",
+    "ANY /vehicles",
+    "ANY /vehicles/{proxy+}",
+    "ANY /services",
+    "ANY /services/{proxy+}",
+    "ANY /items",
+    "ANY /items/{proxy+}",
+    "ANY /service-orders",
+    "ANY /service-orders/{proxy+}",
+
+    # Documentacao da API, exigida pela fase.
+    "GET /docs",
+    "GET /docs/{proxy+}",
+
+    # Sondas: uteis para conferir o caminho de fora sem depender de dado.
+    "GET /health",
+    "GET /ready",
+  ]
+}

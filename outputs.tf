@@ -36,3 +36,18 @@ output "db_password_parameter" {
   description = "Nome do parametro SSM com a senha do banco. Nao e a senha."
   value       = data.terraform_remote_state.db.outputs.db_password_parameter
 }
+
+output "api_gateway_url" {
+  description = "Endereco publico do sistema. Unico caminho de entrada."
+  value       = aws_apigatewayv2_api.main.api_endpoint
+}
+
+output "api_gateway_id" {
+  description = "Id do HTTP API. O repositorio das functions referencia para adicionar rotas."
+  value       = aws_apigatewayv2_api.main.id
+}
+
+output "vpc_link_id" {
+  description = "Id do VPC Link que alcanca o NLB interno."
+  value       = aws_apigatewayv2_vpc_link.main.id
+}
