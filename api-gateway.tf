@@ -57,13 +57,12 @@ resource "aws_apigatewayv2_integration" "cluster" {
 
 # Rotas enumeradas, e nao um curinga ANY /{proxy+}.
 #
-# O plano do M7 tem uma restricao explicita: "o endpoint interno de lookup nao
-# e exposto no API Gateway". Com curinga, ele ficaria alcancavel -- e, pior,
-# todo endpoint futuro nasceria publico por padrao, sem ninguem decidir.
+# Com curinga, todo endpoint futuro nasceria alcancavel por padrao, sem ninguem
+# decidir. Enumerar obriga a decisao a ser tomada uma vez por rota, por escrito.
 #
-# Aqui o lookup simplesmente nao tem rota: o gateway devolve 404 sem nunca
-# alcancar o cluster. A protecao por x-internal-token continua valendo na
-# aplicacao, como segunda camada.
+# O lookup interno tem rota propria em api-gateway-lookup-route.tf, fora desta
+# lista de proposito: ele nao e publico no mesmo sentido das outras, e misturar
+# os dois casos aqui apagaria a distincao.
 #
 # O custo desta escolha: prefixo novo na aplicacao exige rota nova aqui.
 # Esquecer produz 404 em endpoint que existe -- por isso a lista fica visivel
@@ -91,6 +90,16 @@ resource "aws_apigatewayv2_stage" "default" {
   default_route_settings {
     throttling_rate_limit  = var.throttling_rate_limit
     throttling_burst_limit = var.throttling_burst_limit
+  }
+
+  # O lookup interno tem teto proprio, muito abaixo do padrao. O unico chamador
+  # legitimo e a function, e ela faz uma consulta por autenticacao: nenhum uso
+  # honesto chega perto disto. Com o segredo comprometido, este teto e o que
+  # separa uma consulta pontual de uma varredura de CPFs.
+  route_settings {
+    route_key              = aws_apigatewayv2_route.customer_lookup.route_key
+    throttling_rate_limit  = var.lookup_throttling_rate_limit
+    throttling_burst_limit = var.lookup_throttling_burst_limit
   }
 
   access_log_settings {
