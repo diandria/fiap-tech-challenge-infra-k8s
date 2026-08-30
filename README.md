@@ -43,7 +43,7 @@ flowchart TB
             VL["VPC Link"]
             NLB["NLB interno<br/>sem endereço público"]
 
-            subgraph EKS["EKS 1.34 · 2 × t3.medium"]
+            subgraph EKS["EKS 1.34 · 2 × t3.large"]
                 subgraph NSAPP["namespace car-repair-shop"]
                     PODS["Pods da aplicação<br/>(deploy no M8)"]
                 end
@@ -239,7 +239,7 @@ kubectl describe nodes | grep -A8 "Allocated resources"
 | Recurso | Por dia |
 |---|---|
 | EKS control plane (suporte padrão) | USD 2,40 |
-| 2 × t3.medium | USD 2,00 |
+| 2 × t3.large | USD 4,00 |
 | NLB interno | USD 0,54 |
 | Chave KMS | USD 0,03 |
 | **Total** | **~USD 4,97** |
@@ -252,22 +252,32 @@ minutos.
 
 ---
 
-## Dimensionamento, e por que `t3.medium`
+## Dimensionamento, e por que `t3.large`
 
-Dois `t3.small` dariam ~3,2 GiB alocáveis. Medido no cluster real com `t3.medium`:
+O limite que apertou primeiro **não foi memória, foi vaga de pod**. O teto por nó vem do número de
+ENIs do tipo da instância:
+
+| Tipo | ENIs × IPs | Teto de pods | RAM |
+|---|---|---|---|
+| t3.medium | 3 × 6 | 17 | 4 GiB |
+| **t3.large** | 3 × 12 | **35** | 8 GiB |
+
+Com dois `t3.medium` o cluster tinha 34 vagas, e só a infraestrutura ocupou 25 — um nó chegou a
+17/17 e o `loki-0` mais um `promtail` ficaram `Pending` **por falta de vaga, não de recurso**.
+
+Medido depois da troca:
 
 ```
-ip-172-31-16-212   3.22 GiB  1930m cpu  pods=17
-ip-172-31-94-20    3.22 GiB  1930m cpu  pods=17
---> total: 6.43 GiB
+ip-172-31-4-24     8/35 pods   6.91 GiB
+ip-172-31-81-245  16/35 pods   6.91 GiB
+--> teto 70 pods, 13.83 GiB alocaveis
 ```
 
-Só os pods de sistema (CNI, kube-proxy, CoreDNS, metrics-server, CSI driver, controller do load
-balancer) consomem ~1 GB, e a observabilidade pede outros ~2 GB. Com `t3.small` não sobraria memória
-para a aplicação.
+Cinco dos pods de infraestrutura são DaemonSet, um por nó. Por isso nó maior **reduz** a contagem
+total, além de aumentar o teto — foi o argumento que decidiu entre subir o tipo da instância e
+ativar prefix delegation na CNI. A segunda opção seria gratuita, mas manteria 25 pods para rodar um
+serviço simples, e acrescentaria um ajuste não óbvio para manter.
 
-Há um segundo teto que não é de memória: **17 pods por nó**, limite de ENI do tipo de instância — 34
-no total. A observabilidade usa 12 a 15.
 
 ---
 

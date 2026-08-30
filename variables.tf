@@ -27,13 +27,22 @@ variable "node_instance_type" {
   description = <<-TXT
     Tipo das instancias do node group.
 
-    t3.medium, e nao t3.small: com dois t3.small o alocavel fica em ~3,2 GB, e
-    so os pods de sistema (CNI, kube-proxy, CoreDNS, metrics-server, CSI driver
-    e o controller do load balancer) consomem ~1 GB. A stack de observabilidade
-    pede outros ~2 GB, e nao sobraria memoria para a aplicacao.
+    t3.large, e nao t3.medium. O limite que apertou primeiro nao foi memoria, e
+    sim o teto de pods por no, que vem do numero de ENIs do tipo da instancia:
+
+      t3.medium   3 ENIs x  6 IPs  ->  17 pods,  4 GiB
+      t3.large    3 ENIs x 12 IPs  ->  35 pods,  8 GiB
+
+    Com dois t3.medium o cluster tinha 34 vagas e so a infraestrutura ocupou
+    25, deixando loki-0 e um promtail em Pending por falta de vaga -- nao por
+    falta de recurso.
+
+    Dois t3.large resolvem sem ativar prefix delegation na CNI, que seria um
+    ajuste a mais para manter e explicar. Cinco dos pods sao DaemonSet, um por
+    no, entao no maior tambem significa menos pods no total.
   TXT
   type        = string
-  default     = "t3.medium"
+  default     = "t3.large"
 }
 
 variable "node_desired_size" {
