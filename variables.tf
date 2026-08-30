@@ -98,16 +98,17 @@ variable "public_routes" {
     Rotas que o gateway encaminha para o cluster.
 
     Lista explicita em vez de curinga: o que nao esta aqui devolve 404 sem
-    alcancar a aplicacao. E assim que a restricao do M7 -- "o endpoint interno
-    de lookup nao e exposto no API Gateway" -- se torna verdadeira na
-    infraestrutura, e nao apenas na intencao.
+    alcancar a aplicacao. Cada rota alcancavel de fora e uma decisao tomada por
+    escrito, e nao o efeito colateral de um curinga.
 
     Cada prefixo aparece duas vezes de proposito: "/customers" casa a colecao,
     "/customers/{proxy+}" casa os itens abaixo dela. Uma forma nao cobre a
     outra.
 
     Fora da lista de proposito:
-      /auth/customers/lookup  interno, consumido so pela function
+      /auth/customers/lookup  tem rota propria, com throttling proprio, em
+                              api-gateway-lookup-route.tf -- ver a
+                              justificativa da reversao la
       /metrics                raspado pelo Prometheus de dentro do cluster
   TXT
   type        = list(string)
@@ -135,4 +136,23 @@ variable "public_routes" {
     "GET /health",
     "GET /ready",
   ]
+}
+
+variable "lookup_throttling_rate_limit" {
+  description = <<-TXT
+    Teto de requisicoes por segundo na rota de lookup interno.
+
+    Cinco por segundo: a function faz uma consulta por autenticacao, entao nem
+    um pico de logins legitimos chega perto. O numero existe para o caso do
+    segredo compartilhado vazar -- e o que separa uma consulta pontual de uma
+    varredura de CPFs.
+  TXT
+  type        = number
+  default     = 5
+}
+
+variable "lookup_throttling_burst_limit" {
+  description = "Rajada tolerada na rota de lookup interno."
+  type        = number
+  default     = 10
 }
