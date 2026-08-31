@@ -23,9 +23,16 @@ resource "helm_release" "tempo" {
 
       retention = "168h"
 
+      # 1Gi, e nao 512Mi: com o limite anterior o Tempo era OOMKilled na
+      # inicializacao, em ciclo -- 8 reinicios em 56 minutos, sem nunca ficar
+      # pronto. O CD falhava no passo que espera a observabilidade responder, e
+      # os traces da aplicacao eram descartados em silencio: a aplicacao
+      # exportava, o coletor nao estava de pe, e nada no log da aplicacao
+      # indicava perda. Os nos tem folga (26% de memoria em uso no pior deles),
+      # entao o aperto era do limite, e nao do cluster.
       resources = {
-        requests = { memory = "256Mi", cpu = "100m" }
-        limits   = { memory = "512Mi" }
+        requests = { memory = "512Mi", cpu = "100m" }
+        limits   = { memory = "1Gi" }
       }
     }
 
