@@ -42,6 +42,36 @@ resource "helm_release" "kube_prometheus_stack" {
         podMonitorSelectorNilUsesHelmValues     = false
         ruleSelectorNilUsesHelmValues           = false
       }
+
+      # PodMonitor, e nao ServiceMonitor: a porta do Service da aplicacao nao
+      # tem nome, e um ServiceMonitor seleciona a porta pelo nome. Nomear a
+      # porta significaria alterar o Service que sustenta o NLB de que o API
+      # Gateway depende -- risco desproporcional para uma questao de coleta. A
+      # porta do container ja se chama `http`, e o PodMonitor usa essa.
+      #
+      # Declarado como valor do chart, e nao como kubernetes_manifest: o CRD
+      # PodMonitor so passa a existir depois que este mesmo Helm release e
+      # aplicado, e um kubernetes_manifest exigiria o CRD ja presente no
+      # `plan`. Numa subida do zero isso falha antes de criar qualquer coisa.
+      additionalPodMonitors = [
+        {
+          name = "car-repair-shop"
+
+          # A aplicacao vive em outro namespace. Sem isto o Prometheus procura
+          # so no proprio, nao encontra nada, e nao reporta erro: o alvo
+          # simplesmente nao aparece, e o sintoma e dashboard vazio.
+          namespaceSelector = { matchNames = [local.app_namespace] }
+          selector          = { matchLabels = { app = local.app_service_name } }
+
+          podMetricsEndpoints = [
+            {
+              port     = "http"
+              path     = "/metrics"
+              interval = "15s"
+            }
+          ]
+        }
+      ]
     }
 
     alertmanager = {
