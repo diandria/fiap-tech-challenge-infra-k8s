@@ -16,6 +16,82 @@ resource "helm_release" "kube_prometheus_stack" {
     # Requests explicitos em todo componente: com 6,43 GiB alocaveis medidos,
     # o agendador precisa saber o custo real de cada peca para nao aceitar
     # mais carga do que cabe.
+    # Alertas para falhas no processamento de ordens de servico, exigencia
+    # literal do enunciado.
+    #
+    # O escopo do que conta como falha foi decidido pelo grupo (duvida Q9):
+    # erro tecnico 5xx e falha de integracao. Erro de negocio (4xx) fica de
+    # fora -- e a API recusando operacao invalida, que e o comportamento
+    # correto. Alertar sobre isso treina o time a ignorar alerta.
+    #
+    # Como valor do chart, e nao kubernetes_manifest, pelo mesmo motivo do
+    # PodMonitor: o CRD PrometheusRule nasce com este release.
+    additionalPrometheusRulesMap = {
+      car-repair-shop = {
+        groups = [
+          {
+            name = "car-repair-shop"
+            rules = [
+              {
+                alert = "ServiceOrderProcessingFailures"
+                expr  = "sum(rate(integration_failures_total[5m])) > 0"
+
+                # 1 minuto, e nao os 5 que producao pediria: com `for` longo, a
+                # demonstracao passa minutos de tela parada esperando o alerta
+                # aparecer. O valor esta curto de proposito para o contexto
+                # academico, e esta anotado no proprio alerta.
+                for    = "1m"
+                labels = { severity = "critical" }
+                annotations = {
+                  summary     = "Falhas de integracao no processamento de ordens de servico"
+                  description = "A integracao {{ $labels.integration }} falhou na operacao {{ $labels.operation }}. As notificacoes sao best-effort e os casos de uso engolem o erro de proposito, entao este contador e o unico sinal."
+                  janela      = "for=1m encurtado para demonstracao; em producao seria 5m"
+                }
+              },
+              {
+                alert  = "ApplicationDown"
+                expr   = "(sum(up{job=\"observability/car-repair-shop\"}) or vector(0)) == 0"
+                for    = "1m"
+                labels = { severity = "critical" }
+                annotations = {
+                  summary     = "Aplicacao fora do ar"
+                  description = "Nenhum alvo da aplicacao esta respondendo ao scrape."
+
+                  # `up == 0` sozinho nao cobre o caso mais provavel. Se os pods
+                  # somem -- deploy quebrado, HPA zerado, namespace apagado --,
+                  # o PodMonitor nao encontra alvo, a serie deixa de existir, e
+                  # uma expressao sobre serie ausente nao produz resultado: o
+                  # alerta fica em silencio exatamente quando deveria disparar.
+                  # `or vector(0)` da um valor a ausencia.
+                  nota = "a ausencia de serie conta como fora do ar, nao so o scrape falhando"
+                }
+              },
+              {
+                alert  = "HighErrorRate"
+                expr   = "sum(rate(http_request_duration_seconds_count{status_code=~\"5..\"}[5m])) / clamp_min(sum(rate(http_request_duration_seconds_count[5m])), 0.001) > 0.05"
+                for    = "2m"
+                labels = { severity = "critical" }
+                annotations = {
+                  summary     = "Mais de 5% das requisicoes respondendo 5xx"
+                  description = "Proporcao de erro tecnico acima do limite por 2 minutos."
+                }
+              },
+              {
+                alert  = "HighApiLatency"
+                expr   = "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m]))) > 1"
+                for    = "5m"
+                labels = { severity = "warning" }
+                annotations = {
+                  summary     = "p95 de latencia acima de 1 segundo"
+                  description = "O percentil 95 das requisicoes passou de 1s por 5 minutos."
+                }
+              },
+            ]
+          }
+        ]
+      }
+    }
+
     prometheus = {
       prometheusSpec = {
         # Ambiente efemero: reter mais que um dia so gasta disco.
