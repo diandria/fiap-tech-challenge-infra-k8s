@@ -176,6 +176,45 @@ kubectl get secret -n observability grafana-admin \
 
 ---
 
+## Dashboards e alertas
+
+**Versionados como código, em `dashboards/*.json`.** Painel montado pela UI se perde quando o
+cluster é destruído — e aqui o cluster é destruído por construção. Um `fileset` gera um ConfigMap
+por arquivo, com o label `grafana_dashboard = "1"`; o sidecar do Grafana varre esse label e carrega
+sozinho. Não há passo manual de importação.
+
+| Dashboard | Conteúdo |
+|---|---|
+| Volume de ordens de serviço | Contagem, taxa de abertura, distribuição diária |
+| Tempo até cada status | p50, p95, média e heatmap por transição |
+| Latência, healthchecks e uptime | p50/p95/p99 por rota, RPS, taxa de erro 5xx, uptime |
+| Recursos do Kubernetes | CPU e memória contra requests e limites, réplicas contra o HPA |
+
+As quatro regras de alerta e o `PodMonitor` da aplicação são **valores do chart**, no `metrics.tf`,
+e não `kubernetes_manifest`. O motivo é de ordem: os CRDs `PodMonitor` e `PrometheusRule` só
+existem depois que o `kube-prometheus-stack` é aplicado, e um `kubernetes_manifest` exige o CRD já
+presente no `plan`. Numa subida do zero isso falha antes de criar qualquer coisa.
+
+| Alerta | Condição | Severidade |
+|---|---|---|
+| `ServiceOrderProcessingFailures` | falhas de integração no processamento | crítico |
+| `ApplicationDown` | nenhum alvo respondendo ao scrape | crítico |
+| `HighErrorRate` | mais de 5% de 5xx | crítico |
+| `HighApiLatency` | p95 acima de 1s | aviso |
+
+Duas expressões merecem atenção, porque a versão ingênua **não dispara**:
+
+- `ApplicationDown` usa `(sum(up{...}) or vector(0)) == 0`. Com `up == 0` puro, se os pods somem a
+  série deixa de existir, e expressão sobre série ausente não produz resultado — o alerta ficaria
+  em silêncio justamente quando deveria gritar.
+- A taxa de erro usa `or vector(0)` no numerador pelo mesmo motivo: sem nenhum 5xx, o painel
+  mostraria `No data` em vez de `0%`, indistinguível de painel quebrado.
+
+O `for` do `ServiceOrderProcessingFailures` está em 1 minuto, encurtado para a demonstração;
+produção pediria 5. Está anotado na própria regra.
+
+---
+
 ## Deploy
 
 | Evento | O que roda |
@@ -300,6 +339,7 @@ Não são detalhes de implementação: elas invalidam a maior parte dos exemplos
 |---|---|
 | [fiap-tech-challenge](https://github.com/diandria/fiap-tech-challenge) | a aplicação que roda neste cluster |
 | [fiap-tech-challenge-infra-db](https://github.com/diandria/fiap-tech-challenge-infra-db) | o banco que a aplicação consome |
+| [fiap-tech-challenge-lambda](https://github.com/diandria/fiap-tech-challenge-lambda) | as functions; o gateway daqui roteia `POST /auth/cpf` para a `auth`, e lê o ARN dela do estado remoto de lá |
 
 A relação com a aplicação é direta: os endpoints publicados aqui alimentam a configuração dela.
 `tempo_otlp_http_endpoint` vira `OTEL_EXPORTER_OTLP_ENDPOINT`, e `db_endpoint`, `db_port`,
