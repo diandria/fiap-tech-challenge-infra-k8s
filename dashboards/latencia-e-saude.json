@@ -134,7 +134,7 @@
       },
       "targets": [
         {
-          "expr": "(sum(rate(http_request_duration_seconds_count{status_code=~\"5..\"}[5m])) / clamp_min(sum(rate(http_request_duration_seconds_count[5m])), 0.0001)) * 100",
+          "expr": "((sum(rate(http_request_duration_seconds_count{status_code=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(http_request_duration_seconds_count[5m])), 0.0001)) * 100",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -433,7 +433,7 @@
       },
       "targets": [
         {
-          "expr": "(sum(rate(http_request_duration_seconds_count{status_code=~\"5..\"}[5m])) / clamp_min(sum(rate(http_request_duration_seconds_count[5m])), 0.0001)) * 100",
+          "expr": "((sum(rate(http_request_duration_seconds_count{status_code=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(http_request_duration_seconds_count[5m])), 0.0001)) * 100",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -573,7 +573,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "A taxa conta **apenas 5xx**. Erro de negócio (4xx) fica de fora de propósito: é a API recusando operação inválida, que é o comportamento correto. Somar 4xx aqui treinaria quem olha o painel a ignorar o número.\n\nO denominador usa `clamp_min` para não dividir por zero quando não há tráfego — sem isso o painel mostra `NaN` num ambiente ocioso, que parece defeito."
+        "content": "A taxa conta **apenas 5xx**. Erro de negócio (4xx) fica de fora de propósito: é a API recusando operação inválida, que é o comportamento correto. Somar 4xx aqui treinaria quem olha o painel a ignorar o número.\n\nO denominador usa `clamp_min` para não dividir por zero quando não há tráfego — sem isso o painel mostra `NaN` num ambiente ocioso, que parece defeito.\n\nO numerador leva `or vector(0)`: sem nenhum 5xx no periodo, a soma nao produz serie alguma, e divisao sem serie no numerador nao devolve resultado. O painel mostraria **No data** justamente quando o sistema esta perfeito — indistinguivel de painel quebrado. `clamp_min` no denominador resolve so metade do problema."
       }
     }
   ]
