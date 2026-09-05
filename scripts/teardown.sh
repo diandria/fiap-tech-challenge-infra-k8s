@@ -14,10 +14,17 @@
 # `terraform destroy` nao encontra os recursos, mas a AWS continua cobrando.
 # No EKS isso e pior que no RDS, porque o node group sobrevive ao cluster e
 # segue cobrando EC2.
+#
+# O Service da aplicacao e apagado antes do destroy, e nao depois. Ele mora no
+# repositorio da aplicacao e e o dono do NLB: o Terraform daqui nao o conhece,
+# entao destruir o cluster primeiro deixa o balanceador orfao, cobrando.
+# APP_MANIFESTS aponta para os manifests; ajuste se o repositorio estiver em
+# outro caminho.
 set -uo pipefail
 
 REGION="${AWS_REGION:-us-east-1}"
 CLUSTER="${CLUSTER_NAME:-car-repair-shop}"
+APP_MANIFESTS="${APP_MANIFESTS:-$HOME/dev/fiap-tech-challenge/k8s}"
 
 SWEEP=false; ASSUME_YES=false
 for arg in "$@"; do
@@ -43,7 +50,28 @@ confirm() {
   [ "$reply" = "sim" ] || { echo "Cancelado."; exit 0; }
 }
 
-echo "== 1. terraform destroy =="
+echo "== 1. removendo a aplicacao e o NLB que ela cria =="
+# O Service e do repositorio da aplicacao e nao esta no estado do Terraform.
+# Apagando-o aqui, o AWS Load Balancer Controller -- que ainda esta de pe --
+# remove o NLB corretamente. Depois que o cluster morre nao ha quem remova.
+if [ -d "$APP_MANIFESTS" ] && command -v kubectl >/dev/null 2>&1 \
+   && aws eks list-clusters --region "$REGION" --query 'clusters[]' --output text 2>/dev/null | grep -qw "$CLUSTER"; then
+  aws eks update-kubeconfig --name "$CLUSTER" --region "$REGION" >/dev/null 2>&1
+  kubectl delete -f "$APP_MANIFESTS/03-app/" --ignore-not-found >/dev/null 2>&1
+  kubectl delete -f "$APP_MANIFESTS/02-service/" --ignore-not-found >/dev/null 2>&1 \
+    && echo "  Service removido; aguardando o NLB sair"
+  for _ in $(seq 1 30); do
+    n=$(aws elbv2 describe-load-balancers --region "$REGION" \
+        --query 'length(LoadBalancers)' --output text 2>/dev/null)
+    [ "$n" = "0" ] && { echo "  NLB removido"; break; }
+    sleep 5
+  done
+else
+  echo "  cluster ausente ou manifests nao encontrados; o sweep cobre o NLB"
+fi
+
+echo
+echo "== 2. terraform destroy =="
 if [ -d .terraform ] || terraform init -input=false >/dev/null 2>&1; then
   confirm "Destruir o cluster e tudo que roda nele? Digite 'sim':"
   terraform destroy -auto-approve || echo "  destroy retornou erro; o sweep abaixo cobre o resto"
@@ -52,7 +80,7 @@ else
 fi
 
 echo
-echo "== 2. conferindo o que sobrou =="
+echo "== 3. conferindo o que sobrou =="
 leftover=0
 
 clusters=$(aws eks list-clusters --region "$REGION" --query 'clusters[]' --output text 2>/dev/null)
@@ -71,9 +99,15 @@ links=$(aws apigatewayv2 get-vpc-links --region "$REGION" \
         --query 'Items[].VpcLinkId' --output text 2>/dev/null)
 [ -n "$links" ] && { echo "  VPC Link presente: $links"; leftover=1; } || echo "  VPC Link: limpo"
 
+# Volumes dos PersistentVolumeClaims da observabilidade. Sobrevivem ao cluster
+# e continuam cobrando por GiB provisionado, sem aparecer em lugar nenhum.
+vols=$(aws ec2 describe-volumes --region "$REGION" --filters Name=status,Values=available \
+       --query 'Volumes[].VolumeId' --output text 2>/dev/null)
+[ -n "$vols" ] && { echo "  Volumes EBS soltos: $vols"; leftover=1; } || echo "  Volumes EBS: limpo"
+
 if [ "$leftover" = "1" ] && [ "$SWEEP" = "true" ]; then
   echo
-  echo "== 3. sweep =="
+  echo "== 4. sweep =="
   confirm "O sweep apaga recursos direto na AWS, sem passar pelo estado. Digite 'sim':"
 
   # Ordem importa: node group antes do cluster, senao o cluster recusa a
@@ -100,6 +134,13 @@ if [ "$leftover" = "1" ] && [ "$SWEEP" = "true" ]; then
   for vl in $links; do
     aws apigatewayv2 delete-vpc-link --region "$REGION" --vpc-link-id "$vl" >/dev/null 2>&1 \
       && echo "  vpc link removido"
+  done
+
+  # Depois do cluster: um volume ainda anexado recusa a remocao.
+  for v in $(aws ec2 describe-volumes --region "$REGION" --filters Name=status,Values=available \
+             --query 'Volumes[].VolumeId' --output text 2>/dev/null); do
+    aws ec2 delete-volume --region "$REGION" --volume-id "$v" >/dev/null 2>&1 \
+      && echo "  volume $v removido" || echo "  volume $v nao removido; ver console"
   done
 elif [ "$leftover" = "1" ]; then
   echo
