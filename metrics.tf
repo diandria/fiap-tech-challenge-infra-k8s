@@ -172,9 +172,12 @@ resource "helm_release" "kube_prometheus_stack" {
       # entrada, fora do API Gateway.
       service = { type = "ClusterIP" }
 
+      # 384Mi era pouco: o container foi OOMKilled em 04/09/2026 com os cinco
+      # dashboards carregados, e a queda derruba o port-forward da demonstracao
+      # sem deixar sintoma no Grafana -- so "lost connection to pod" no kubectl.
       resources = {
-        requests = { memory = "192Mi", cpu = "50m" }
-        limits   = { memory = "384Mi" }
+        requests = { memory = "256Mi", cpu = "50m" }
+        limits   = { memory = "768Mi" }
       }
 
       persistence = {
