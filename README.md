@@ -14,7 +14,7 @@ controlado e de instrumentação que mostre o que está acontecendo. Este reposi
 |---|---|
 | Cluster EKS e node group | onde a aplicação roda |
 | Addons (CNI, CoreDNS, metrics-server, EBS CSI) | rede, DNS, HPA e volumes |
-| AWS Load Balancer Controller e NLB interno | expõe a aplicação **dentro** da VPC |
+| AWS Load Balancer Controller | provisiona o NLB que o Service da aplicação declara |
 | Prometheus, Grafana, Alertmanager | métricas |
 | Loki e Promtail | logs |
 | Tempo | tracing distribuído |
@@ -25,8 +25,10 @@ controlado e de instrumentação que mostre o que está acontecendo. Este reposi
 - **não cria VPC** — consome a default da região
 - **não cria o banco** — isso é do repositório de infraestrutura do banco, cujo estado é lido aqui
 - **não cria role de IAM** — o Learner Lab restringe; cluster e nós assumem a `LabRole` existente
-- **não faz o deploy da aplicação** — os pods vêm do repositório da aplicação. O **Service** mora
-  aqui, porque é ele que faz nascer o NLB de que o gateway depende
+- **não faz o deploy da aplicação** — Deployment, Service, HPA e ConfigMap vêm do repositório da
+  aplicação. Daqui sai só o **Namespace**, que é ambiente e não aplicação
+- **não cria o NLB** — ele nasce do Service da aplicação. A integração do gateway depende do ARN do
+  listener dele, e por isso é aplicada numa segunda fase, depois que a aplicação subiu
 
 ---
 
