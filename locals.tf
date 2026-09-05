@@ -5,8 +5,9 @@ locals {
   # Tempo. Facilita aplicar limite de recurso e apagar tudo de uma vez.
   observability_namespace = "observability"
 
-  # Namespace e nome do Service da aplicacao. O deploy dos pods vem no M8, mas
-  # o Service nasce aqui porque ele e a origem do NLB.
+  # Namespace da aplicacao e nome do seu Service. O Service em si e declarado no
+  # repositorio da aplicacao; o nome fica aqui porque a busca do NLB por tag
+  # depende dele.
   app_namespace    = "car-repair-shop"
   app_service_name = "car-repair-shop-api"
 }
