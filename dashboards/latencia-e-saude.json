@@ -208,7 +208,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "s",
-          "decimals": 3
+          "decimals": 1
         },
         "overrides": []
       },
@@ -292,7 +292,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "s",
-          "decimals": 3,
+          "decimals": 1,
           "custom": {
             "drawStyle": "line",
             "fillOpacity": 10,
@@ -349,7 +349,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "s",
-          "decimals": 3,
+          "decimals": 1,
           "custom": {
             "drawStyle": "line",
             "fillOpacity": 10,
@@ -541,7 +541,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "s",
-          "decimals": 4,
+          "decimals": 1,
           "custom": {
             "drawStyle": "line",
             "fillOpacity": 10,
