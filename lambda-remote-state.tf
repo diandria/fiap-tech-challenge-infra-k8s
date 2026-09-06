@@ -1,5 +1,5 @@
-# O repositorio das functions tem estado proprio. Ler os outputs de la evita
-# repetir o ARN da function aqui, que e como esses valores divergem.
+# The functions repository has its own state. Reading its outputs avoids
+# repeating the function ARN here.
 data "terraform_remote_state" "lambda" {
   backend = "s3"
 

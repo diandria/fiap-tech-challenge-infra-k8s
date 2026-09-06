@@ -1,5 +1,5 @@
-# Tempo em binario unico, mesma razao do Loki: dois nos e volume de
-# demonstracao nao justificam o modo distribuido.
+# Tempo as a single binary, same reason as Loki: two nodes and a demonstration
+# volume do not justify distributed mode.
 resource "helm_release" "tempo" {
   name       = "tempo"
   repository = "https://grafana.github.io/helm-charts"
@@ -10,8 +10,8 @@ resource "helm_release" "tempo" {
 
   values = [yamlencode({
     tempo = {
-      # A aplicacao exporta OTLP por HTTP na 4318 desde o M3.T6. O receptor
-      # precisa casar com o OTEL_EXPORTER_OTLP_ENDPOINT dela.
+      # The application exports OTLP over HTTP on 4318. The receiver has to
+      # match its OTEL_EXPORTER_OTLP_ENDPOINT.
       receivers = {
         otlp = {
           protocols = {
@@ -23,13 +23,10 @@ resource "helm_release" "tempo" {
 
       retention = "168h"
 
-      # 1Gi, e nao 512Mi: com o limite anterior o Tempo era OOMKilled na
-      # inicializacao, em ciclo -- 8 reinicios em 56 minutos, sem nunca ficar
-      # pronto. O CD falhava no passo que espera a observabilidade responder, e
-      # os traces da aplicacao eram descartados em silencio: a aplicacao
-      # exportava, o coletor nao estava de pe, e nada no log da aplicacao
-      # indicava perda. Os nos tem folga (26% de memoria em uso no pior deles),
-      # entao o aperto era do limite, e nao do cluster.
+      # 1Gi, not 512Mi: with the previous limit Tempo was OOMKilled on startup
+      # in a loop, 8 restarts in 56 minutes, never becoming ready. The CD failed
+      # waiting for observability, and the application's spans were dropped
+      # silently, with nothing in its log indicating loss.
       resources = {
         requests = { memory = "512Mi", cpu = "100m" }
         limits   = { memory = "1Gi" }

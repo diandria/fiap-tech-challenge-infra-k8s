@@ -1,13 +1,13 @@
 locals {
   cluster_name = "car-repair-shop"
 
-  # Namespace unico para toda a observabilidade: Prometheus, Grafana, Loki e
-  # Tempo. Facilita aplicar limite de recurso e apagar tudo de uma vez.
+  # One namespace for all observability: Prometheus, Grafana, Loki and Tempo.
+  # It makes resource limits and a single teardown straightforward.
   observability_namespace = "observability"
 
-  # Namespace da aplicacao e nome do seu Service. O Service em si e declarado no
-  # repositorio da aplicacao; o nome fica aqui porque a busca do NLB por tag
-  # depende dele.
+  # Application namespace and the name of its Service. The Service itself is
+  # declared in the application repository; the name lives here because the
+  # tag-based NLB lookup depends on it.
   app_namespace    = "car-repair-shop"
   app_service_name = "car-repair-shop-api"
 }

@@ -1,10 +1,10 @@
-# O AWS Load Balancer Controller descobre onde colocar o NLB pelas tags das
-# subnets. O EKS marca sozinho apenas as subnets que ele proprio cria; as da
-# VPC default chegam sem tag nenhuma, e o controller falha com
+# The AWS Load Balancer Controller finds where to place the NLB through subnet
+# tags. EKS tags only the subnets it creates itself; the default VPC ones arrive
+# untagged and the controller fails with
 # "unable to resolve at least one subnet. Evaluated 0 subnets".
 #
-# aws_ec2_tag adiciona a tag sem assumir a posse da subnet, que e de outro
-# dono: o Terraform aqui nao gerencia a VPC default.
+# aws_ec2_tag adds the tag without taking ownership of the subnet, which belongs
+# to someone else: this Terraform does not manage the default VPC.
 resource "aws_ec2_tag" "subnet_internal_elb" {
   for_each = toset(data.aws_subnets.cluster.ids)
 
@@ -13,9 +13,8 @@ resource "aws_ec2_tag" "subnet_internal_elb" {
   value       = "1"
 }
 
-# Marca as subnets como compartilhadas com este cluster. "shared", e nao
-# "owned", porque a VPC default nao pertence a este repositorio e outros
-# recursos a usam.
+# Marks the subnets as shared with this cluster. "shared", not "owned", because
+# the default VPC does not belong to this repository and other resources use it.
 resource "aws_ec2_tag" "subnet_cluster" {
   for_each = toset(data.aws_subnets.cluster.ids)
 

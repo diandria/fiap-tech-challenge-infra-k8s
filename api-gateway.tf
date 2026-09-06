@@ -1,12 +1,12 @@
-# Security group dos nos, criado pelo EKS. O VPC Link precisa dele para
-# alcancar os alvos do NLB.
+# Node security group, created by EKS. The VPC Link needs it to reach the NLB
+# targets.
 data "aws_eks_cluster" "main" {
   name       = aws_eks_cluster.main.name
   depends_on = [aws_eks_cluster.main]
 }
 
-# O recurso mais lento de criar e destruir de todo o repositorio: entra no
-# orcamento de tempo do runbook.
+# The slowest resource to create and destroy in this repository, which is why
+# the runbook budgets time for it.
 resource "aws_apigatewayv2_vpc_link" "main" {
   name               = local.cluster_name
   subnet_ids         = data.aws_subnets.cluster.ids
@@ -16,7 +16,7 @@ resource "aws_apigatewayv2_vpc_link" "main" {
 resource "aws_apigatewayv2_api" "main" {
   name          = local.cluster_name
   protocol_type = "HTTP"
-  description   = "Porta de entrada unica do sistema da oficina"
+  description   = "Single entry point for the workshop system"
 
   cors_configuration {
     allow_origins = var.cors_allowed_origins

@@ -1,27 +1,25 @@
-# Existe por um motivo especifico: sem ele os nos sobem com
-# HttpPutResponseHopLimit = 1, e nessa configuracao a resposta do IMDS nao
-# atravessa o salto extra da rede do pod para o host. Qualquer pod que dependa
-# da credencial da instancia falha com "no EC2 IMDS role found".
+# Exists for one specific reason: without it the nodes come up with
+# HttpPutResponseHopLimit = 1, and the IMDS response does not cross the extra
+# hop from the pod network to the host. Any pod relying on the instance
+# credential fails with "no EC2 IMDS role found".
 #
-# Isso derruba o driver do EBS CSI, e derrubaria tambem o controller do load
-# balancer -- os dois precisam chamar a API da AWS e, no Learner Lab, nao ha
-# IRSA disponivel (nao da para criar provedor OIDC nem alterar a trust policy
-# da LabRole).
+# That breaks the EBS CSI driver and would break the load balancer controller
+# too: both call the AWS API, and the Learner Lab offers no IRSA.
 resource "aws_launch_template" "node" {
   name_prefix = "${local.cluster_name}-node-"
-  description = "Nos do EKS com IMDS alcancavel pelos pods"
+  description = "EKS nodes with IMDS reachable from the pods"
 
   metadata_options {
     http_endpoint = "enabled"
 
-    # IMDSv2 obrigatorio. Hop limit 2 e o minimo para o pod alcancar; manter
-    # em 2, e nao mais, limita o alcance a um salto de container.
+    # IMDSv2 required. Hop limit 2 is the minimum for a pod to reach it, and
+    # keeping it at 2 limits the reach to a single container hop.
     http_tokens                 = "required"
     http_put_response_hop_limit = 2
   }
 
-  # AMI de proposito ausente: sem ela o EKS usa a imagem otimizada que
-  # corresponde a versao do cluster, e continua atualizando junto.
+  # AMI deliberately omitted: without it EKS uses the optimised image matching
+  # the cluster version and keeps it updated.
 
   lifecycle {
     create_before_destroy = true

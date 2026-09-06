@@ -12,8 +12,8 @@ provider "aws" {
   }
 }
 
-# Autenticacao por token efemero do EKS, gerado a cada operacao. Evita gravar
-# credencial de cluster em arquivo, que e o que o .gitignore ja bloqueia.
+# Authentication with an ephemeral EKS token, generated per operation. Avoids
+# writing cluster credentials to a file.
 provider "kubernetes" {
   host                   = aws_eks_cluster.main.endpoint
   cluster_ca_certificate = base64decode(aws_eks_cluster.main.certificate_authority[0].data)

@@ -18,11 +18,10 @@ env:
 
 jobs:
   apply:
-    name: Aplicar infraestrutura
+    name: Apply infrastructure
     runs-on: ubuntu-latest
-    # O EKS leva 10 a 15 minutos para o control plane e outros tantos para o
-    # node group; o padrao de 360 minutos e generoso, mas os passos de espera
-    # abaixo tem limite proprio.
+    # EKS takes 10 to 15 minutes for the control plane and as long again for
+    # the node group. The waiting steps below have their own limits.
     timeout-minutes: 60
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -36,10 +35,10 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
 
-      - name: Conferir credencial
+      - name: Verify credentials
         run: |
           aws ec2 describe-vpcs --max-items 1 > /dev/null 2>&1 || {
-            echo "::error::Credencial da AWS ausente, expirada ou revogada. A do Learner Lab cai quando a sessao do lab para; rode Start Lab e depois ./scripts/refresh-aws-secrets.sh"
+            echo "::error::AWS credentials missing, expired or revoked. Learner Lab credentials drop when the lab session stops; run Start Lab, then ./scripts/refresh-aws-secrets.sh"
             exit 1
           }
 
@@ -49,40 +48,40 @@ jobs:
       - name: terraform apply
         run: terraform apply -auto-approve -input=false -no-color
 
-      # Apply verde com cluster em estado invalido e falso positivo: o apply
-      # responde "criei", nao "esta funcionando".
-      - name: Cluster esta ativo
+      # A green apply with the cluster in an invalid state is a false positive:
+      # apply answers "created", not "working".
+      - name: Cluster is active
         run: |
           status=$(aws eks describe-cluster --name car-repair-shop \
                    --query 'cluster.status' --output text)
           echo "status=$status"
-          [ "$status" = "ACTIVE" ] || { echo "::error::Cluster em $status"; exit 1; }
+          [ "$status" = "ACTIVE" ] || { echo "::error::Cluster is $status"; exit 1; }
 
-      - name: Nos estao prontos
+      - name: Nodes are ready
         run: |
           aws eks update-kubeconfig --name car-repair-shop --region "$AWS_REGION"
           kubectl wait --for=condition=Ready nodes --all --timeout=600s
           kubectl get nodes
 
-      # A observabilidade e item avaliado da fase: se ela nao subir, o deploy
-      # nao deve passar por verde.
-      - name: Observabilidade respondendo
+      # Observability is part of what this environment delivers: if it does not
+      # come up, the deploy must not pass as green.
+      - name: Observability responding
         run: |
           kubectl wait --for=condition=Ready pods --all \
             -n observability --timeout=600s
           kubectl get pods -n observability
 
-      - name: Resumo
+      - name: Summary
         run: |
           {
-            echo "### Cluster aplicado"
+            echo "### Cluster applied"
             echo ""
-            echo '| Item | Valor |'
+            echo '| Item | Value |'
             echo '|---|---|'
-            echo "| Versao do Kubernetes | $(aws eks describe-cluster --name car-repair-shop --query 'cluster.version' --output text) |"
-            echo "| Nos prontos | $(kubectl get nodes --no-headers | grep -c ' Ready ') |"
-            echo "| Pods de observabilidade | $(kubectl get pods -n observability --no-headers | wc -l) |"
+            echo "| Kubernetes version | $(aws eks describe-cluster --name car-repair-shop --query 'cluster.version' --output text) |"
+            echo "| Nodes ready | $(kubectl get nodes --no-headers | grep -c ' Ready ') |"
+            echo "| Observability pods | $(kubectl get pods -n observability --no-headers | wc -l) |"
             echo ""
-            echo "Custo aproximado de pe: **USD 4,40/dia** (control plane mais dois t3.medium)."
-            echo "Para derrubar: workflow **Destroy**, ou \`./scripts/teardown.sh\`."
+            echo "Approximate cost while up: **USD 4.97/day**."
+            echo "To tear down: the **Destroy** workflow, or \`./scripts/teardown.sh\`."
           } >> "$GITHUB_STEP_SUMMARY"

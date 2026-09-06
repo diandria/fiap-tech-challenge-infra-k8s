@@ -1,12 +1,11 @@
-# Dashboards como codigo.
+# Dashboards as code.
 #
-# Painel montado pela UI do Grafana se perde quando o cluster e destruido, e
-# aqui o cluster e destruido por construcao -- o ambiente e efemero. Versionar
-# o JSON e o que faz o painel sobreviver ao teardown.
+# A panel built in the Grafana UI is lost when the cluster is destroyed, and
+# here the cluster is destroyed by design. Versioning the JSON is what makes the
+# panel survive a teardown.
 #
-# O sidecar de dashboards do Grafana varre ConfigMaps com o label
-# `grafana_dashboard = "1"` em todos os namespaces e os carrega sozinho. Nao ha
-# passo manual de importacao.
+# Grafana's dashboard sidecar scans ConfigMaps labelled `grafana_dashboard = "1"`
+# in every namespace and loads them on its own. There is no manual import step.
 locals {
   dashboards = fileset("${path.module}/dashboards", "*.json")
 }

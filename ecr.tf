@@ -1,24 +1,22 @@
-# Registro da imagem da aplicacao.
+# Registry for the application image.
 #
-# Mora neste repositorio, e nao no da aplicacao, porque e infraestrutura de
-# longa duracao: o repositorio ECR sobrevive a qualquer deploy, e apaga-lo
-# junto com um rollback de aplicacao perderia todas as tags anteriores --
-# inclusive a que se quer voltar.
+# It lives here rather than in the application repository because it is
+# long-lived infrastructure: the ECR repository outlives any deploy, and
+# deleting it during a rollback would lose every previous tag.
 resource "aws_ecr_repository" "app" {
   name = local.cluster_name
 
-  # Imutavel de proposito. Com tags mutaveis, `sobrescrever` a tag de um SHA
-  # ja publicado passaria despercebido, e dois deploys do "mesmo" SHA rodariam
-  # codigo diferente. E o tipo de divergencia que so aparece sob pressao.
+  # Immutable on purpose. With mutable tags, overwriting an already published
+  # SHA would go unnoticed and two deploys of the "same" SHA would run
+  # different code.
   image_tag_mutability = "IMMUTABLE"
 
   image_scanning_configuration {
     scan_on_push = true
   }
 
-  # O ambiente e efemero e recriado a cada sessao do Learner Lab. Sem isto, o
-  # destroy falharia com "repository contains images" e deixaria custo para
-  # tras justamente na hora em que se quer derrubar tudo.
+  # The environment is recreated every Learner Lab session. Without this,
+  # destroy fails with "repository contains images" and leaves cost behind.
   force_delete = true
 }
 

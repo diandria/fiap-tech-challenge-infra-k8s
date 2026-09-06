@@ -1,7 +1,7 @@
-# A StorageClass que o EKS cria por padrao usa o provisionador in-tree
-# `kubernetes.io/aws-ebs`, removido do Kubernetes ha varias versoes e mantido
-# so por traducao automatica. Prometheus e Loki dependem de volume, entao vale
-# uma classe explicita apontando para o driver CSI de verdade.
+# The StorageClass EKS creates by default uses the in-tree provisioner
+# `kubernetes.io/aws-ebs`, removed from Kubernetes several versions ago and kept
+# only by automatic translation. Prometheus and Loki need volumes, so an
+# explicit class pointing at the real CSI driver is worth it.
 resource "kubernetes_storage_class_v1" "gp3" {
   metadata {
     name = "gp3"
@@ -15,13 +15,13 @@ resource "kubernetes_storage_class_v1" "gp3" {
   reclaim_policy         = "Delete"
   allow_volume_expansion = true
 
-  # Espera o pod ser agendado para criar o volume na AZ certa. Sem isso, o
-  # volume pode nascer numa AZ onde o pod nao cabe, e ficar preso.
+  # Waits for the pod to be scheduled so the volume is created in the right AZ.
+  # Otherwise it can land in an AZ where the pod does not fit and get stuck.
   volume_binding_mode = "WaitForFirstConsumer"
 
   parameters = {
     type = "gp3"
-    # Volume cifrado em repouso; gp3 tambem e mais barato que gp2.
+    # Encrypted at rest; gp3 is also cheaper than gp2.
     encrypted = "true"
   }
 
