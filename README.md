@@ -345,6 +345,29 @@ Não são detalhes de implementação: elas invalidam a maior parte dos exemplos
 
 ---
 
+## Documentação arquitetural
+
+A documentação transversal do projeto (RFCs, ADRs, diagrama de componentes, diagramas de sequência e
+modelo ER) é **centralizada** na pasta `docs/architecture` do repositório da aplicação, e não
+replicada aqui. O diagrama acima é o específico deste repositório.
+
+| Documento | Onde |
+|---|---|
+| Diagrama de componentes | [components.md](https://github.com/diandria/fiap-tech-challenge/blob/main/docs/architecture/components.md) |
+| Sequência: autenticação por CPF | [sequence-auth-cpf.md](https://github.com/diandria/fiap-tech-challenge/blob/main/docs/architecture/sequence-auth-cpf.md) |
+| Sequência: ordem de serviço | [sequence-service-order.md](https://github.com/diandria/fiap-tech-challenge/blob/main/docs/architecture/sequence-service-order.md) |
+| Modelo ER e justificativa do banco | [data-model.md](https://github.com/diandria/fiap-tech-challenge/blob/main/docs/architecture/data-model.md) e [RFC-002](https://github.com/diandria/fiap-tech-challenge/blob/main/docs/architecture/rfc/RFC-002-banco-de-dados.md) |
+| ADRs | [índice](https://github.com/diandria/fiap-tech-challenge/blob/main/docs/architecture/adr/README.md) |
+| RFCs | [índice](https://github.com/diandria/fiap-tech-challenge/blob/main/docs/architecture/rfc/README.md) |
+
+Os documentos que mais dizem respeito a este repositório: [ADR-001](https://github.com/diandria/fiap-tech-challenge/blob/main/docs/architecture/adr/ADR-001-ponto-unico-de-entrada.md)
+(ponto único de entrada), [ADR-004](https://github.com/diandria/fiap-tech-challenge/blob/main/docs/architecture/adr/ADR-004-hpa-e-escalabilidade.md) (HPA),
+[ADR-005](https://github.com/diandria/fiap-tech-challenge/blob/main/docs/architecture/adr/ADR-005-observabilidade-self-hosted.md) e [RFC-005](https://github.com/diandria/fiap-tech-challenge/blob/main/docs/architecture/rfc/RFC-005-produtos-observabilidade.md)
+(observabilidade), [ADR-006](https://github.com/diandria/fiap-tech-challenge/blob/main/docs/architecture/adr/ADR-006-produto-api-gateway.md) e [RFC-004](https://github.com/diandria/fiap-tech-challenge/blob/main/docs/architecture/rfc/RFC-004-produto-api-gateway.md)
+(API Gateway).
+
+---
+
 ## Repositórios relacionados
 
 | Repositório | Papel |
