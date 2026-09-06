@@ -1,6 +1,6 @@
-# Traz de uma vez Prometheus Operator, Prometheus, Alertmanager, Grafana,
-# kube-state-metrics e node-exporter. Os dois ultimos sao o que atende
-# "consumo de recursos do Kubernetes" sem escrever instrumentacao.
+# Brings Prometheus Operator, Prometheus, Alertmanager, Grafana,
+# kube-state-metrics and node-exporter in one release. The last two cover
+# Kubernetes resource usage without writing any instrumentation.
 resource "helm_release" "kube_prometheus_stack" {
   name       = "kube-prometheus-stack"
   repository = "https://prometheus-community.github.io/helm-charts"
@@ -8,24 +8,22 @@ resource "helm_release" "kube_prometheus_stack" {
   version    = "88.6.1"
   namespace  = kubernetes_namespace_v1.observability.metadata[0].name
 
-  # Charts desta stack criam muitos CRDs e recursos; 15 minutos evita falso
-  # negativo por tempo esgotado num cluster de dois nos.
+  # This stack creates many CRDs and resources; 15 minutes avoids a false
+  # negative from a timeout on a two-node cluster.
   timeout = 900
 
   values = [yamlencode({
-    # Requests explicitos em todo componente: com 6,43 GiB alocaveis medidos,
-    # o agendador precisa saber o custo real de cada peca para nao aceitar
-    # mais carga do que cabe.
-    # Alertas para falhas no processamento de ordens de servico, exigencia
-    # literal do enunciado.
+    # Explicit requests on every component: with 6.43 GiB measured allocatable,
+    # the scheduler needs each piece's real cost so it does not accept more load
+    # than fits.
     #
-    # O escopo do que conta como falha foi decidido pelo grupo (duvida Q9):
-    # erro tecnico 5xx e falha de integracao. Erro de negocio (4xx) fica de
-    # fora -- e a API recusando operacao invalida, que e o comportamento
-    # correto. Alertar sobre isso treina o time a ignorar alerta.
+    # Alerts for service order processing failures. What counts as a failure:
+    # 5xx technical errors and integration failures. Business errors (4xx) stay
+    # out, since those are the API correctly refusing an invalid operation, and
+    # alerting on them trains the team to ignore alerts.
     #
-    # Como valor do chart, e nao kubernetes_manifest, pelo mesmo motivo do
-    # PodMonitor: o CRD PrometheusRule nasce com este release.
+    # Declared as a chart value rather than a kubernetes_manifest for the same
+    # reason as the PodMonitor: the PrometheusRule CRD is born with this release.
     additionalPrometheusRulesMap = {
       car-repair-shop = {
         groups = [
@@ -36,10 +34,9 @@ resource "helm_release" "kube_prometheus_stack" {
                 alert = "ServiceOrderProcessingFailures"
                 expr  = "sum(rate(integration_failures_total[5m])) > 0"
 
-                # 1 minuto, e nao os 5 que producao pediria: com `for` longo, a
-                # demonstracao passa minutos de tela parada esperando o alerta
-                # aparecer. O valor esta curto de proposito para o contexto
-                # academico, e esta anotado no proprio alerta.
+                # 1 minute rather than the 5 production would ask for: a long
+                # `for` means minutes of blank screen during a demonstration.
+                # Shortened on purpose, and noted in the alert itself.
                 for    = "1m"
                 labels = { severity = "critical" }
                 annotations = {
@@ -57,12 +54,11 @@ resource "helm_release" "kube_prometheus_stack" {
                   summary     = "Aplicacao fora do ar"
                   description = "Nenhum alvo da aplicacao esta respondendo ao scrape."
 
-                  # `up == 0` sozinho nao cobre o caso mais provavel. Se os pods
-                  # somem -- deploy quebrado, HPA zerado, namespace apagado --,
-                  # o PodMonitor nao encontra alvo, a serie deixa de existir, e
-                  # uma expressao sobre serie ausente nao produz resultado: o
-                  # alerta fica em silencio exatamente quando deveria disparar.
-                  # `or vector(0)` da um valor a ausencia.
+                  # `up == 0` alone misses the likeliest case. If the pods
+                  # disappear the PodMonitor finds no target, the series stops
+                  # existing, and an expression over a missing series yields
+                  # nothing: the alert stays silent exactly when it should fire.
+                  # `or vector(0)` gives absence a value.
                   nota = "a ausencia de serie conta como fora do ar, nao so o scrape falhando"
                 }
               },
@@ -94,7 +90,7 @@ resource "helm_release" "kube_prometheus_stack" {
 
     prometheus = {
       prometheusSpec = {
-        # Ambiente efemero: reter mais que um dia so gasta disco.
+        # Ephemeral environment: retaining more than a day only wastes disk.
         retention = "24h"
 
         resources = {
@@ -112,30 +108,28 @@ resource "helm_release" "kube_prometheus_stack" {
           }
         }
 
-        # Sem isto o Prometheus so enxerga ServiceMonitors com o label do
-        # proprio release, e os da aplicacao (M8) seriam ignorados em silencio.
+        # Without this Prometheus only sees ServiceMonitors carrying its own
+        # release label, and the application's would be ignored silently.
         serviceMonitorSelectorNilUsesHelmValues = false
         podMonitorSelectorNilUsesHelmValues     = false
         ruleSelectorNilUsesHelmValues           = false
       }
 
-      # PodMonitor, e nao ServiceMonitor: a porta do Service da aplicacao nao
-      # tem nome, e um ServiceMonitor seleciona a porta pelo nome. Nomear a
-      # porta significaria alterar o Service que sustenta o NLB de que o API
-      # Gateway depende -- risco desproporcional para uma questao de coleta. A
-      # porta do container ja se chama `http`, e o PodMonitor usa essa.
+      # PodMonitor, not ServiceMonitor: the application Service's port has no
+      # name, and a ServiceMonitor selects the port by name. Naming it would
+      # mean changing the Service that anchors the NLB the gateway depends on.
+      # The container port is already called `http`, so the PodMonitor uses it.
       #
-      # Declarado como valor do chart, e nao como kubernetes_manifest: o CRD
-      # PodMonitor so passa a existir depois que este mesmo Helm release e
-      # aplicado, e um kubernetes_manifest exigiria o CRD ja presente no
-      # `plan`. Numa subida do zero isso falha antes de criar qualquer coisa.
+      # A chart value rather than a kubernetes_manifest: the PodMonitor CRD only
+      # exists after this Helm release is applied, and a kubernetes_manifest
+      # would require the CRD present at plan time.
       additionalPodMonitors = [
         {
           name = "car-repair-shop"
 
-          # A aplicacao vive em outro namespace. Sem isto o Prometheus procura
-          # so no proprio, nao encontra nada, e nao reporta erro: o alvo
-          # simplesmente nao aparece, e o sintoma e dashboard vazio.
+          # The application lives in another namespace. Without this Prometheus
+          # searches only its own, finds nothing and reports no error: the
+          # target simply never appears and the dashboard is empty.
           namespaceSelector = { matchNames = [local.app_namespace] }
           selector          = { matchLabels = { app = local.app_service_name } }
 
@@ -160,21 +154,21 @@ resource "helm_release" "kube_prometheus_stack" {
     }
 
     grafana = {
-      # A senha vem do Secret, nunca daqui.
+      # The password comes from the Secret, never from here.
       admin = {
         existingSecret = "grafana-admin"
         userKey        = "admin-user"
         passwordKey    = "admin-password"
       }
 
-      # ClusterIP de proposito: o acesso na demonstracao e por
-      # kubectl port-forward. Expor o Grafana criaria um segundo caminho de
-      # entrada, fora do API Gateway.
+      # ClusterIP on purpose: access during the demonstration is by
+      # kubectl port-forward. Exposing Grafana would create a second entry
+      # point outside the API Gateway.
       service = { type = "ClusterIP" }
 
-      # 384Mi era pouco: o container foi OOMKilled em 04/09/2026 com os cinco
-      # dashboards carregados, e a queda derruba o port-forward da demonstracao
-      # sem deixar sintoma no Grafana -- so "lost connection to pod" no kubectl.
+      # 384Mi was not enough: the container was OOMKilled with the five
+      # dashboards loaded, and the crash drops the demonstration port-forward
+      # with no symptom in Grafana, only "lost connection to pod" in kubectl.
       resources = {
         requests = { memory = "256Mi", cpu = "50m" }
         limits   = { memory = "768Mi" }
@@ -186,10 +180,9 @@ resource "helm_release" "kube_prometheus_stack" {
         size             = "2Gi"
       }
 
-      # O pod do Grafana tem tres containers: o principal e dois sidecars que
-      # sincronizam dashboards e datasources. O bloco resources acima so
-      # alcanca o principal; sem isto os sidecars ficam sem teto, e a conta de
-      # memoria do cluster deixa de fechar.
+      # The Grafana pod has three containers: the main one and two sidecars that
+      # sync dashboards and datasources. The resources block above reaches only
+      # the main one, so without this the sidecars have no ceiling.
       sidecar = {
         resources = {
           requests = { memory = "48Mi", cpu = "10m" }
@@ -219,9 +212,9 @@ resource "helm_release" "kube_prometheus_stack" {
       }
     }
 
-    # O EKS nao expoe estes componentes do control plane: deixar habilitado
-    # gera alerta permanente de target inalcancavel, que treina quem olha o
-    # painel a ignorar alerta vermelho.
+    # EKS does not expose these control plane components: leaving them enabled
+    # produces a permanent unreachable-target alert, which trains whoever reads
+    # the panel to ignore red.
     kubeEtcd              = { enabled = false }
     kubeControllerManager = { enabled = false }
     kubeScheduler         = { enabled = false }

@@ -1,6 +1,5 @@
-# O banco vive em outro repositorio, com estado proprio. Ler os outputs de la
-# evita repetir endpoint e nome de parametro em dois lugares, que e como esses
-# valores divergem.
+# The database lives in another repository with its own state. Reading its
+# outputs avoids repeating the endpoint and parameter name in two places.
 data "terraform_remote_state" "db" {
   backend = "s3"
 

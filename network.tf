@@ -2,9 +2,9 @@ data "aws_vpc" "default" {
   default = true
 }
 
-# Nem toda AZ oferece o tipo de instancia escolhido: us-east-1e nao tem
-# t3.medium. Derivar a lista do que a conta realmente oferece evita um node
-# group que falha ao subir, dez minutos depois do apply comecar.
+# Not every AZ offers the chosen instance type: us-east-1e has no t3.medium.
+# Deriving the list from what the account actually offers avoids a node group
+# that fails to come up ten minutes into the apply.
 data "aws_ec2_instance_type_offerings" "node" {
   location_type = "availability-zone"
 

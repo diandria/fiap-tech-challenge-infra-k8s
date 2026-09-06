@@ -1,22 +1,16 @@
-# Recursos do gateway que dependem do NLB da aplicacao.
+# Gateway resources that depend on the application NLB.
 #
-# O NLB nasce do Service em k8s/02-service/ do repositorio da aplicacao. Nada
-# aqui pode ser planejado antes que aquele Service exista: `data.aws_lb` falha
-# o plano, e nao apenas o apply.
+# The NLB is born from the Service in k8s/02-service/ of the application
+# repository. Nothing here can be planned before that Service exists:
+# `data.aws_lb` fails the plan, not just the apply.
 #
-# Por isso tudo o que depende do NLB ou da function fica atras de
-# var.enable_gateway_routes. Na primeira fase de uma subida do zero a variavel
-# vai em `false`, e nenhum destes recursos entra no plano; na segunda, o apply
-# com o padrao `true` cria integracao, rotas e permissao.
-#
-# Antes disso o procedimento era mover tres arquivos .tf para fora do diretorio
-# e devolve-los depois. Esquece-los fora fazia o apply seguinte destruir as
-# rotas, e o gateway respondia 404 em tudo. Uma variavel nao tem esse modo de
-# falha: o padrao e o estado completo.
+# So everything depending on the NLB or the function sits behind
+# var.enable_gateway_routes. During the first phase of a from-scratch provision
+# the variable is `false` and none of these resources enter the plan; the second
+# apply, with the default `true`, creates integration, routes and permission.
 
-# O NLB nasce do Service do Kubernetes, nao de um recurso do Terraform. Para
-# ligar o gateway nele e preciso descobri-lo pelas tags que o AWS Load Balancer
-# Controller aplica.
+# The NLB is born from the Kubernetes Service, not from a Terraform resource, so
+# it is discovered through the tags the AWS Load Balancer Controller applies.
 data "aws_lb" "api" {
   count = var.enable_gateway_routes ? 1 : 0
 
@@ -47,18 +41,17 @@ resource "aws_apigatewayv2_integration" "cluster" {
   timeout_milliseconds   = 29000
 }
 
-# Rotas enumeradas, e nao um curinga ANY /{proxy+}.
+# Routes are enumerated rather than a wildcard ANY /{proxy+}.
 #
-# Com curinga, todo endpoint futuro nasceria alcancavel por padrao, sem ninguem
-# decidir. Enumerar obriga a decisao a ser tomada uma vez por rota, por escrito.
+# With a wildcard every future endpoint would be reachable by default, with
+# nobody deciding. Enumerating forces one written decision per route.
 #
-# O lookup interno tem rota propria em api-gateway-lookup-route.tf, fora desta
-# lista de proposito: ele nao e publico no mesmo sentido das outras, e misturar
-# os dois casos aqui apagaria a distincao.
+# The internal lookup has its own route in api-gateway-lookup-route.tf, outside
+# this list on purpose.
 #
-# O custo desta escolha: prefixo novo na aplicacao exige rota nova aqui.
-# Esquecer produz 404 em endpoint que existe -- por isso a lista fica visivel
-# numa variavel, e nao escondida no meio do recurso.
+# The cost: a new prefix in the application needs a new route here, and
+# forgetting produces a 404 on an endpoint that exists. That is why the list is
+# a visible variable rather than buried in the resource.
 resource "aws_apigatewayv2_route" "public" {
   for_each = var.enable_gateway_routes ? toset(var.public_routes) : toset([])
 
@@ -72,20 +65,19 @@ resource "aws_apigatewayv2_stage" "default" {
   name        = "$default"
   auto_deploy = true
 
-  # O throttling e o que atende "API Gateway para controle e roteamento".
-  # Sem ele, o gateway e so um proxy: nao controla nada.
+  # Throttling is what makes this control and routing rather than a plain proxy.
   default_route_settings {
     throttling_rate_limit  = var.throttling_rate_limit
     throttling_burst_limit = var.throttling_burst_limit
   }
 
-  # O lookup interno tem teto proprio, muito abaixo do padrao. O unico chamador
-  # legitimo e a function, e ela faz uma consulta por autenticacao: nenhum uso
-  # honesto chega perto disto. Com o segredo comprometido, este teto e o que
-  # separa uma consulta pontual de uma varredura de CPFs.
+  # The internal lookup has its own ceiling, far below the default. Its only
+  # legitimate caller is the function, which makes one query per authentication.
+  # If the shared secret leaked, this ceiling is what separates a single lookup
+  # from a sweep of CPFs.
   #
-  # Dinamico porque a rota so existe com var.enable_gateway_routes: um
-  # route_settings apontando para rota inexistente falha o apply do stage.
+  # Dynamic because the route only exists with var.enable_gateway_routes: a
+  # route_settings pointing at a missing route fails the stage apply.
   dynamic "route_settings" {
     for_each = var.enable_gateway_routes ? [1] : []
 
@@ -99,8 +91,8 @@ resource "aws_apigatewayv2_stage" "default" {
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.api_access.arn
 
-    # JSON, e nao texto: o log da fase inteira e estruturado desde o M2, e
-    # texto aqui quebraria a consulta.
+    # JSON, not text: the logs across the system are structured, and plain text
+    # here would break querying.
     format = jsonencode({
       requestId        = "$context.requestId"
       ip               = "$context.identity.sourceIp"

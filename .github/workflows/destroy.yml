@@ -1,16 +1,16 @@
 name: Destroy
 
-# So manual, e com confirmacao digitada. O EKS e o item mais caro da fase:
-# o control plane custa USD 0,10/hora, cerca de cinco vezes o banco.
+# Manual only, with a typed confirmation. EKS is the most expensive resource
+# here: the control plane costs USD 0.10/hour, about five times the database.
 on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Digite "production" para confirmar a destruicao'
+        description: 'Type "production" to confirm the destruction'
         required: true
         type: string
       sweep:
-        description: "Remover tambem o que sobrar fora do estado do Terraform"
+        description: "Also remove what is left outside the Terraform state"
         required: false
         type: boolean
         default: false
@@ -28,7 +28,7 @@ env:
 
 jobs:
   destroy:
-    name: Destruir infraestrutura
+    name: Destroy infrastructure
     if: inputs.confirm == 'production'
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -44,20 +44,21 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
 
-      - name: Conferir credencial
+      - name: Verify credentials
         run: |
           aws ec2 describe-vpcs --max-items 1 > /dev/null 2>&1 || {
-            echo "::error::Credencial ausente, expirada ou revogada."
+            echo "::error::Credentials missing, expired or revoked."
             exit 1
           }
 
       - name: terraform init
         run: terraform init -input=false
 
-      # Os load balancers nascem de Services dentro do cluster, nao do estado
-      # do Terraform. Destruir o cluster sem remove-los antes deixa NLB orfao
-      # cobrando, e o destroy trava na dependencia de rede.
-      - name: Remover Services do tipo LoadBalancer primeiro
+      # Load balancers come from Services inside the cluster, not from the
+      # Terraform state. Destroying the cluster without removing them first
+      # leaves an orphaned NLB billing, and destroy stalls on the network
+      # dependency.
+      - name: Remove LoadBalancer Services first
         continue-on-error: true
         run: |
           aws eks update-kubeconfig --name car-repair-shop --region "$AWS_REGION" || exit 0
@@ -68,38 +69,38 @@ jobs:
       - name: terraform destroy
         run: terraform destroy -auto-approve -input=false -no-color
 
-      - name: Sweep do que sobrou fora do estado
+      - name: Sweep what is left outside the state
         if: inputs.sweep
         run: ./scripts/teardown.sh --sweep --yes
 
-      # Destroy verde nao prova conta limpa: no EKS um destroy parcial deixa
-      # node group cobrando EC2.
-      - name: Confirmar que nada cobravel sobrou
+      # A green destroy does not prove a clean account: a partial EKS destroy
+      # leaves the node group billing EC2.
+      - name: Confirm nothing billable is left
         run: |
           leftover=0
           eks=$(aws eks list-clusters --query 'clusters[]' --output text)
           ec2=$(aws ec2 describe-instances --filters "Name=instance-state-name,Values=running" \
                 --query 'Reservations[].Instances[].InstanceId' --output text)
           elb=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[].LoadBalancerArn' --output text)
-          [ -n "$eks" ] && { echo "::warning::Cluster ainda presente: $eks"; leftover=1; }
-          [ -n "$ec2" ] && { echo "::warning::EC2 em execucao: $ec2"; leftover=1; }
-          [ -n "$elb" ] && { echo "::warning::Load balancer presente"; leftover=1; }
+          [ -n "$eks" ] && { echo "::warning::Cluster still present: $eks"; leftover=1; }
+          [ -n "$ec2" ] && { echo "::warning::EC2 still running: $ec2"; leftover=1; }
+          [ -n "$elb" ] && { echo "::warning::Load balancer still present"; leftover=1; }
           {
-            echo "### Destruicao concluida"
+            echo "### Destruction complete"
             echo ""
             if [ "$leftover" = "0" ]; then
-              echo "Nada cobravel restante nesta regiao."
+              echo "Nothing billable left in this region."
             else
-              echo "**Sobrou recurso cobrando.** Rode de novo com \`sweep\` marcado."
+              echo "**A billable resource is left.** Run again with \`sweep\` checked."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
           [ "$leftover" = "0" ]
 
   recusado:
-    name: Confirmacao invalida
+    name: Invalid confirmation
     if: inputs.confirm != 'production'
     runs-on: ubuntu-latest
     steps:
       - run: |
-          echo "::error::Confirmacao invalida. Digite exatamente 'production' para destruir."
+          echo "::error::Invalid confirmation. Type exactly 'production' to destroy."
           exit 1

@@ -1,27 +1,27 @@
-# Integracao com a function que emite o JWT de cliente.
+# Integration with the function that issues the customer JWT.
 #
-# AWS_PROXY, e nao HTTP_PROXY: o gateway entrega o evento inteiro a Lambda e
-# devolve o que ela responder, sem passar por VPC Link -- a function nao esta
-# na VPC, por decisao do ADR-002.
+# AWS_PROXY, not HTTP_PROXY: the gateway hands the whole event to Lambda and
+# returns whatever it answers, without a VPC Link, because the function is not
+# in the VPC (ADR-002).
 resource "aws_apigatewayv2_integration" "auth_lambda" {
-  # O ARN da function vem do estado remoto do repositorio das functions, que
-  # ainda nao existe na primeira fase de uma subida do zero. Ver
-  # api-gateway-routes.tf sobre var.enable_gateway_routes.
+  # The function ARN comes from the functions repository's remote state, which
+  # does not exist yet during the first phase of a from-scratch provision. See
+  # api-gateway-routes.tf about var.enable_gateway_routes.
   count = var.enable_gateway_routes ? 1 : 0
 
   api_id           = aws_apigatewayv2_api.main.id
   integration_type = "AWS_PROXY"
   integration_uri  = data.terraform_remote_state.lambda.outputs.auth_lambda_invoke_arn
 
-  # 2.0 e o formato que a function espera: o handler le event.body e devolve
-  # { statusCode, headers, body }.
+  # 2.0 is the format the function expects: the handler reads event.body and
+  # returns { statusCode, headers, body }.
   payload_format_version = "2.0"
   timeout_milliseconds   = 29000
 }
 
-# Rota especifica. As rotas publicas deste gateway sao enumeradas, entao esta
-# nao disputa com curinga nenhum -- mas o HTTP API priorizaria a especifica de
-# qualquer forma.
+# A specific route. The public routes on this gateway are enumerated, so it
+# competes with no wildcard, and the HTTP API would prioritise the specific one
+# regardless.
 resource "aws_apigatewayv2_route" "auth_cpf" {
   count = var.enable_gateway_routes ? 1 : 0
 
@@ -30,8 +30,8 @@ resource "aws_apigatewayv2_route" "auth_cpf" {
   target    = "integrations/${aws_apigatewayv2_integration.auth_lambda[0].id}"
 }
 
-# Sem esta permissao a rota existe, aparece correta no console, e toda chamada
-# devolve 500 -- o gateway nao consegue invocar e nada indica o motivo.
+# Without this permission the route exists, looks correct in the console, and
+# every call returns 500: the gateway cannot invoke and nothing says why.
 resource "aws_lambda_permission" "api_gateway_invoke_auth" {
   count = var.enable_gateway_routes ? 1 : 0
 
@@ -40,7 +40,7 @@ resource "aws_lambda_permission" "api_gateway_invoke_auth" {
   function_name = data.terraform_remote_state.lambda.outputs.auth_lambda_function_name
   principal     = "apigateway.amazonaws.com"
 
-  # Restringe a este gateway e a esta rota: sem o source_arn, qualquer API
-  # Gateway da conta poderia invocar a function.
+  # Restricted to this gateway and route: without source_arn, any API Gateway in
+  # the account could invoke the function.
   source_arn = "${aws_apigatewayv2_api.main.execution_arn}/*/POST/auth/cpf"
 }

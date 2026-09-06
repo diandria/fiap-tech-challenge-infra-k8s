@@ -1,58 +1,58 @@
-# Outputs consumidos pela aplicacao (M8) e pelo repositorio das functions (M6).
+# Outputs consumed by the application and by the functions repository.
 
 output "tempo_otlp_http_endpoint" {
-  description = "Receptor OTLP HTTP do Tempo. Alimenta OTEL_EXPORTER_OTLP_ENDPOINT da aplicacao (M8.T3)."
+  description = "Tempo OTLP HTTP receiver. Feeds the application's OTEL_EXPORTER_OTLP_ENDPOINT."
   value       = "http://tempo.${local.observability_namespace}.svc.cluster.local:4318"
 }
 
 output "loki_push_endpoint" {
-  description = "Endpoint de ingestao do Loki, caso algum componente precise empurrar log direto."
+  description = "Loki ingestion endpoint, for any component that pushes logs directly."
   value       = "http://loki.${local.observability_namespace}.svc.cluster.local:3100"
 }
 
 output "observability_namespace" {
-  description = "Namespace onde vivem Prometheus, Grafana, Loki e Tempo."
+  description = "Namespace where Prometheus, Grafana, Loki and Tempo live."
   value       = local.observability_namespace
 }
 
-# Repassa o que o repositorio do banco publica. Assim a aplicacao (M8) le tudo
-# de um unico estado, em vez de precisar conhecer dois backends.
+# Re-exports what the database repository publishes, so the application reads
+# everything from one state instead of knowing two backends.
 output "db_endpoint" {
-  description = "Endereco do RDS, lido do estado do repositorio do banco."
+  description = "RDS address, read from the database repository state."
   value       = data.terraform_remote_state.db.outputs.db_endpoint
 }
 
 output "db_port" {
-  description = "Porta do RDS."
+  description = "RDS port."
   value       = data.terraform_remote_state.db.outputs.db_port
 }
 
 output "db_name" {
-  description = "Nome do banco."
+  description = "Database name."
   value       = data.terraform_remote_state.db.outputs.db_name
 }
 
 output "db_password_parameter" {
-  description = "Nome do parametro SSM com a senha do banco. Nao e a senha."
+  description = "Name of the SSM parameter holding the database password. Not the password."
   value       = data.terraform_remote_state.db.outputs.db_password_parameter
 }
 
 output "api_gateway_url" {
-  description = "Endereco publico do sistema. Unico caminho de entrada."
+  description = "Public address of the system. The only entry path."
   value       = aws_apigatewayv2_api.main.api_endpoint
 }
 
 output "api_gateway_id" {
-  description = "Id do HTTP API. O repositorio das functions referencia para adicionar rotas."
+  description = "HTTP API id, referenced by the functions repository to add routes."
   value       = aws_apigatewayv2_api.main.id
 }
 
 output "vpc_link_id" {
-  description = "Id do VPC Link que alcanca o NLB interno."
+  description = "Id of the VPC Link that reaches the internal NLB."
   value       = aws_apigatewayv2_vpc_link.main.id
 }
 
 output "ecr_repository_url" {
-  description = "URL do repositorio ECR da aplicacao, consumida pelo CD."
+  description = "URL of the application ECR repository, consumed by the CD."
   value       = aws_ecr_repository.app.repository_url
 }

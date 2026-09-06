@@ -1,5 +1,5 @@
-# Versao fixada: chart sem versao fixa muda embaixo do projeto entre um apply e
-# outro, e a diferenca so aparece em producao.
+# Pinned version: an unpinned chart changes between applies and the difference
+# only surfaces in production.
 resource "helm_release" "aws_load_balancer_controller" {
   name       = "aws-load-balancer-controller"
   repository = "https://aws.github.io/eks-charts"
@@ -22,17 +22,16 @@ resource "helm_release" "aws_load_balancer_controller" {
     value = data.aws_vpc.default.id
   }
 
-  # Sem IRSA, de novo. O Learner Lab nao permite criar provedor OIDC nem
-  # alterar a trust policy da LabRole, entao o controller usa a credencial da
-  # instancia -- que so chega ate ele porque o launch template do node group
-  # abriu o hop limit do IMDS para 2.
+  # No IRSA again. The Learner Lab allows neither an OIDC provider nor changes
+  # to the LabRole trust policy, so the controller uses the instance credential,
+  # which only reaches it because the launch template raised the IMDS hop limit.
   set {
     name  = "serviceAccount.create"
     value = "true"
   }
 
-  # Duas replicas por padrao no chart; com dois nos, uma basta e economiza
-  # memoria para a observabilidade.
+  # The chart defaults to two replicas; with two nodes, one is enough and leaves
+  # memory for the observability stack.
   set {
     name  = "replicaCount"
     value = "1"
@@ -48,8 +47,8 @@ resource "helm_release" "aws_load_balancer_controller" {
     value = "50m"
   }
 
-  # O controller precisa dos addons de rede de pe para conseguir falar com a
-  # API da AWS e com o control plane.
+  # The controller needs the networking addons up to reach the AWS API and the
+  # control plane.
   depends_on = [
     aws_eks_addon.main,
     aws_eks_node_group.main,

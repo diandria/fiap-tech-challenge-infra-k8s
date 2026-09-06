@@ -4,7 +4,7 @@ terraform {
   required_providers {
     aws  = { source = "hashicorp/aws", version = "~> 5.0" }
     helm = { source = "hashicorp/helm", version = "~> 2.17" }
-    # Usado pelos addons e pela verificacao dos recursos criados via Helm.
+    # Used by the addons and to verify the resources Helm creates.
     kubernetes = { source = "hashicorp/kubernetes", version = "~> 2.35" }
     random     = { source = "hashicorp/random", version = "~> 3.6" }
   }

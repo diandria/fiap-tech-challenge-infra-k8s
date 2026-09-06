@@ -1,7 +1,6 @@
-# Loki em modo monolitico (SingleBinary): o ambiente tem dois nos e volume de
-# log de demonstracao. O modo distribuido traria ingester, distributor,
-# querier e compactor separados, sem ganho aqui e com custo de memoria que a
-# conta do cluster nao comporta.
+# Loki in monolithic mode (SingleBinary): two nodes and a demonstration log
+# volume. Distributed mode would bring separate ingester, distributor, querier
+# and compactor, with no gain here and a memory cost the cluster cannot absorb.
 resource "helm_release" "loki" {
   name       = "loki"
   repository = "https://grafana.github.io/helm-charts"
@@ -18,8 +17,8 @@ resource "helm_release" "loki" {
 
       commonConfig = { replication_factor = 1 }
 
-      # Armazenamento em disco do proprio pod. S3 seria o padrao em producao,
-      # mas exigiria credencial de bucket no cluster e nao ha IRSA aqui.
+      # Storage on the pod's own disk. S3 would be the production default but
+      # would need bucket credentials in the cluster, and there is no IRSA here.
       storage = { type = "filesystem" }
 
       schemaConfig = {
@@ -33,11 +32,11 @@ resource "helm_release" "loki" {
       }
 
       limits_config = {
-        # Retencao de 7 dias: cobre a janela de demonstracao sem encher o disco.
+        # Seven days: covers the demonstration window without filling the disk.
         retention_period = "168h"
 
-        # Trava de cardinalidade. Se alguem promover trace_id a label por
-        # engano, o Loki recusa em vez de degradar silenciosamente.
+        # Cardinality guard. If trace_id is promoted to a label by mistake, Loki
+        # refuses instead of degrading silently.
         max_label_names_per_series = 15
       }
     }
@@ -55,7 +54,7 @@ resource "helm_release" "loki" {
       }
     }
 
-    # Componentes do modo distribuido, desligados explicitamente.
+    # Distributed-mode components, explicitly disabled.
     backend        = { replicas = 0 }
     read           = { replicas = 0 }
     write          = { replicas = 0 }
@@ -68,13 +67,13 @@ resource "helm_release" "loki" {
     bloomCompactor = { replicas = 0 }
     bloomGateway   = { replicas = 0 }
 
-    # O chart sobe um cache em memoria por padrao; desnecessario neste volume
-    # e caro para a conta de memoria.
+    # The chart runs an in-memory cache by default: unnecessary at this volume
+    # and costly for the memory budget.
     chunksCache  = { enabled = false }
     resultsCache = { enabled = false }
 
-    # Gateway nginx na frente do Loki: nao ha necessidade com um unico
-    # consumidor (o Grafana), que fala direto com o Service.
+    # An nginx gateway in front of Loki is unnecessary with a single consumer,
+    # Grafana, which talks to the Service directly.
     gateway = { enabled = false }
 
     test       = { enabled = false }
@@ -103,11 +102,11 @@ resource "helm_release" "promtail" {
 
       snippets = {
         pipelineStages = [
-          # 1. Desembrulha o formato do runtime. Sem isto, a linha inteira do
-          #    CRI vira o "log" e o JSON da aplicacao nunca e alcancado.
+          # 1. Unwraps the runtime format. Without it the whole CRI line becomes
+          #    the "log" and the application JSON is never reached.
           { cri = {} },
 
-          # 2. Le o JSON que a aplicacao emite desde o M2.
+          # 2. Reads the JSON the application emits.
           {
             json = {
               expressions = {
@@ -120,12 +119,11 @@ resource "helm_release" "promtail" {
             }
           },
 
-          # 3. Promove a label apenas o que tem cardinalidade baixa.
+          # 3. Promotes to labels only what has low cardinality.
           #
-          #    trace_id fica de fora de proposito, e essa e a decisao desta
-          #    tarefa: como label, cada requisicao criaria uma stream nova e o
-          #    Loki degradaria rapido. Ele continua no corpo do log e e
-          #    pesquisavel por filtro de linha:
+          #    trace_id stays out on purpose: as a label, every request would
+          #    create a new stream and Loki would degrade quickly. It remains in
+          #    the log body and is searchable by line filter:
           #      {service_name="car-repair-shop-api"} | json | trace_id="..."
           {
             labels = {

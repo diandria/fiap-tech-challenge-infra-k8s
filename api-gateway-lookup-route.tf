@@ -1,54 +1,26 @@
-# Rota do endpoint interno de lookup de cliente.
+# Route for the internal customer lookup endpoint.
 #
-# ---------------------------------------------------------------------------
-# Esta rota reverte uma restricao escrita no plano do M7, e a reversao precisa
-# de justificativa.
+# The function reaches the application only through this gateway: it has no
+# vpc_config (ADR-002), so without this route /auth/customers/lookup answered
+# 404, the function translated that to "customer not found", and POST /auth/cpf
+# failed with 401 for a valid CPF. A routing error disguised as a bad
+# credential.
 #
-# A restricao era: "o endpoint interno de lookup nao e exposto no API Gateway".
-# Ela foi escrita supondo que a function alcancaria a aplicacao por outro
-# caminho. Nao alcanca:
+# ADR-002 already accepts this protection model in its risk section: the
+# endpoint is guarded by the x-internal-token shared secret rather than mTLS,
+# proportional to the scope and recorded as debt. Putting the function inside
+# the VPC would make the lookup genuinely unreachable from the internet, and
+# stays the hardening path if the scope changes.
 #
-#   - a function nao tem vpc_config, por decisao do ADR-002: ela nao toca o
-#     banco, e uma ENI so acrescentaria cold start
-#   - sem estar na VPC, o unico caminho ate a aplicacao e o proprio gateway
-#   - o gateway nao roteava /auth/customers/lookup, entao devolvia 404
+# Layers protecting this route:
 #
-# O sintoma era o pior possivel: `POST /auth/cpf` com um CPF valido devolvia
-# 401 "authentication failed". A function traduz 404 para "cliente nao
-# encontrado", e "cliente nao encontrado" vira 401. Um erro de roteamento se
-# disfarcava de credencial invalida -- plausivel o bastante para ninguem
-# investigar.
+#   1. x-internal-token, compared in constant time by the application
+#   2. its own throttling below, much tighter than the default
+#   3. rate limit in the application (30/min)
+#   4. absent from the public Swagger, with a test asserting it
 #
-# As duas decisoes eram individualmente corretas e incompativeis juntas. Uma
-# tinha que ceder.
-#
-# Por que cede a restricao, e nao o ADR-002:
-#
-#   O ADR-002 ja aceita explicitamente este modelo de protecao, na secao de
-#   riscos: "o endpoint interno e protegido pelo header x-internal-token, um
-#   segredo compartilhado, e nao por mTLS. E proporcional ao escopo, mas fica
-#   registrado como divida."
-#
-#   Ou seja: a superficie que esta rota cria ja tinha sido pesada e aceita. A
-#   restricao do M7 era mais estrita que o ADR que ela deveria implementar.
-#
-#   A alternativa -- colocar a function na VPC para falar com o NLB interno --
-#   deixaria o lookup genuinamente inalcancavel da internet, que e melhor. Mas
-#   custa ENI, security group, cold start e contradiz um ADR aceito, para
-#   endurecer algo que ja foi julgado proporcional. Fica registrado como o
-#   caminho de endurecimento, se o escopo mudar.
-# ---------------------------------------------------------------------------
-#
-# Camadas que protegem esta rota:
-#
-#   1. x-internal-token, comparado em tempo constante na aplicacao
-#   2. throttling proprio, abaixo -- muito mais apertado que o padrao
-#   3. rate limit na aplicacao (30/min)
-#   4. ausente do Swagger publico, com teste afirmando isso
-#
-# Separada de var.public_routes de proposito: ela nao e publica no mesmo
-# sentido das outras. Misturar as duas na mesma lista apagaria a distincao
-# exatamente onde ela mais importa.
+# Kept out of var.public_routes on purpose: it is not public in the same sense
+# as the others, and mixing them would erase the distinction.
 resource "aws_apigatewayv2_route" "customer_lookup" {
   count = var.enable_gateway_routes ? 1 : 0
 

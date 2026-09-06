@@ -1,8 +1,8 @@
 name: CI
 
 on:
-  # Sem filtro de branch de destino: as tarefas deste milestone sao PRs
-  # empilhados, que apontam uns para os outros e nao direto para a main.
+  # No target-branch filter: work arrives as stacked PRs that point at each
+  # other rather than at main, and a filter would skip all of them.
   pull_request:
 
 permissions:
@@ -14,10 +14,10 @@ env:
   AWS_REGION: us-east-1
 
 jobs:
-  # Portao real: nao depende de credencial da AWS, entao continua valendo
-  # quando a chave temporaria do Learner Lab expira ou e revogada.
+  # The real gate: it needs no AWS credential, so it still holds when the
+  # Learner Lab's temporary key expires or is revoked.
   validate:
-    name: Formato, sintaxe e seguranca
+    name: Format, syntax and security
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,10 +36,9 @@ jobs:
       - name: terraform validate
         run: terraform validate
 
-      # O trivy nao cobre ingress aberto: verificado no repositorio do banco
-      # que ele reporta zero problemas para ingress 0.0.0.0/0, enquanto acusa
-      # o egress equivalente.
-      - name: Nenhum ingress aberto para a internet
+      # trivy does not cover open ingress: verified that it reports nothing for
+      # ingress 0.0.0.0/0 while flagging the equivalent egress.
+      - name: No ingress open to the internet
         run: python3 scripts/check-no-public-ingress.py
 
       - uses: terraform-linters/setup-tflint@v4
@@ -62,7 +61,7 @@ jobs:
           exit-code: "1"
 
   plan:
-    name: Plano de mudanca
+    name: Change plan
     needs: validate
     runs-on: ubuntu-latest
     env:
@@ -77,14 +76,14 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: false
 
-      - name: Conferir credencial antes de tentar
+      - name: Verify credentials antes de tentar
         id: creds
         run: |
           if aws ec2 describe-vpcs --max-items 1 > /dev/null 2>&1; then
             echo "ok=true" >> "$GITHUB_OUTPUT"
           else
             echo "ok=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Credencial da AWS ausente, expirada ou revogada. A do Learner Lab cai quando a sessao do lab para; rode ./scripts/refresh-aws-secrets.sh apos Start Lab."
+            echo "::warning::AWS credentials missing, expired or revoked. Learner Lab credentials drop when the lab session stops; run ./scripts/refresh-aws-secrets.sh after Start Lab."
           fi
 
       - name: terraform init
@@ -95,8 +94,8 @@ jobs:
         id: plan
         if: steps.creds.outputs.ok == 'true'
         run: |
-          # Saida de TEXTO, nunca `terraform show -json`: o JSON traz valores
-          # sensiveis em claro, e este repositorio e publico.
+          # TEXT output, never `terraform show -json`: the JSON carries
+          # sensitive values in clear text and this repository is public.
           terraform plan -input=false -no-color -lock=false > plan.txt 2>&1 || true
           {
             echo 'stdout<<PLANEOF'
@@ -104,7 +103,7 @@ jobs:
             echo 'PLANEOF'
           } >> "$GITHUB_OUTPUT"
 
-      - name: Comentar o plano no PR
+      - name: Comment the plan on the PR
         if: steps.creds.outputs.ok == 'true'
         uses: actions/github-script@v7
         env:
@@ -113,9 +112,9 @@ jobs:
           script: |
             const marker = '<!-- terraform-plan -->';
             const body = `${marker}
-            ### Plano do Terraform
+            ### Terraform plan
 
-            <details><summary>Ver o que vai mudar</summary>
+            <details><summary>See what will change</summary>
 
             \`\`\`hcl
             ${process.env.PLAN}

@@ -1,8 +1,8 @@
-# O sidecar de datasources do Grafana varre ConfigMaps com este label e os
-# carrega sozinho.
+# Grafana's datasource sidecar scans ConfigMaps with this label and loads them
+# on its own.
 #
-# UIDs fixos de proposito: os dois datasources se referenciam um ao outro para
-# a navegacao entre log e trace, e UID gerado nao daria para escrever aqui.
+# Fixed UIDs on purpose: the two datasources reference each other for the
+# log-to-trace navigation, and a generated UID could not be written here.
 locals {
   loki_datasource_uid  = "loki"
   tempo_datasource_uid = "tempo"
@@ -22,11 +22,10 @@ resource "kubernetes_config_map_v1" "grafana_datasource_logs_traces" {
     "logs-traces.yaml" = yamlencode({
       apiVersion = 1
 
-      # O Grafana persiste datasources no banco dele, que tem volume. Um
-      # registro criado antes com UID gerado automaticamente faz o
-      # provisionamento falhar com "data source not found", porque ele tenta
-      # atualizar pelo UID declarado aqui e nao encontra.
-      # deleteDatasources roda antes da insercao e resolve o conflito.
+      # Grafana persists datasources in its own database, which has a volume. A
+      # record created earlier with a generated UID makes provisioning fail with
+      # "data source not found", because it updates by the UID declared here.
+      # deleteDatasources runs before the insert and resolves the conflict.
       deleteDatasources = [
         { name = "Loki", orgId = 1 },
         { name = "Tempo", orgId = 1 },
@@ -42,11 +41,9 @@ resource "kubernetes_config_map_v1" "grafana_datasource_logs_traces" {
           isDefault = false
 
           jsonData = {
-            # A ida: extrai trace_id do corpo do log e oferece um link para o
-            # trace correspondente no Tempo.
-            #
-            # Sem isto, o Tempo fica instalado e inutil na pratica: ninguem
-            # descobre o id de um trace lendo log a olho nu para colar na busca.
+            # The outbound path: extracts trace_id from the log body and offers
+            # a link to the matching trace in Tempo. Without it Tempo is
+            # installed but unusable in practice.
             derivedFields = [{
               name            = "trace_id"
               matcherType     = "label"
@@ -66,17 +63,17 @@ resource "kubernetes_config_map_v1" "grafana_datasource_logs_traces" {
           isDefault = false
 
           jsonData = {
-            # A volta: de um span, buscar as linhas de log daquela requisicao.
+            # The return path: from a span, find that request's log lines.
             tracesToLogsV2 = {
               datasourceUid = local.loki_datasource_uid
 
-              # Janela em torno do span. Sem folga, log gravado alguns
-              # milissegundos antes ou depois do span fica de fora.
+              # Window around the span. Without slack, a line written a few
+              # milliseconds before or after the span falls outside it.
               spanStartTimeShift = "-5m"
               spanEndTimeShift   = "5m"
 
-              # Filtra pelo trace_id no corpo, nao por label -- coerente com a
-              # decisao de cardinalidade do PR anterior.
+              # Filters by trace_id in the body, not by label, consistent with
+              # the cardinality decision in logs.tf.
               filterByTraceID = true
               customQuery     = true
               query           = "{$${__tags}} | json | trace_id=`$${__span.traceId}`"

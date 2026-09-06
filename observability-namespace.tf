@@ -4,8 +4,8 @@ resource "kubernetes_namespace_v1" "observability" {
   }
 }
 
-# Senha gerada aqui e guardada em Secret. Nunca no values do chart: este
-# repositorio e publico, e values de Helm entram no commit.
+# The password is generated here and stored in a Secret, never in the chart
+# values: this repository is public and Helm values are committed.
 resource "random_password" "grafana_admin" {
   length  = 24
   special = false

@@ -1,12 +1,10 @@
-# Cifra dos secrets do cluster em repouso no etcd. O trivy acusa AWS-0039
-# (HIGH) sem isto, e a acusacao procede: o cluster guarda, entre outros, a
-# senha do Grafana.
+# Encrypts cluster secrets at rest in etcd. Without it trivy raises AWS-0039
+# (HIGH), and rightly so: the cluster holds the Grafana password among others.
 #
-# Uma vez habilitada no cluster, a cifra nao pode ser removida -- e uma via de
-# mao unica. Aceitavel aqui porque o ambiente e efemero e recriado a cada
-# ciclo.
+# Once enabled the encryption cannot be removed. Acceptable here because the
+# environment is ephemeral and recreated every cycle.
 resource "aws_kms_key" "eks_secrets" {
-  description             = "Cifra dos secrets do EKS do car-repair-shop"
+  description             = "Encryption for the car-repair-shop EKS secrets"
   enable_key_rotation     = true
   deletion_window_in_days = 7
 }
