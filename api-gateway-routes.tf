@@ -4,29 +4,41 @@
 # aqui pode ser planejado antes que aquele Service exista: `data.aws_lb` falha
 # o plano, e nao apenas o apply.
 #
-# Por isso este arquivo sai do lugar durante a primeira fase do provisionamento
-# e volta na segunda, depois do deploy da aplicacao. O mesmo tratamento que
-# api-gateway-auth-route.tf recebe pela dependencia com a function.
+# Por isso tudo o que depende do NLB ou da function fica atras de
+# var.enable_gateway_routes. Na primeira fase de uma subida do zero a variavel
+# vai em `false`, e nenhum destes recursos entra no plano; na segunda, o apply
+# com o padrao `true` cria integracao, rotas e permissao.
+#
+# Antes disso o procedimento era mover tres arquivos .tf para fora do diretorio
+# e devolve-los depois. Esquece-los fora fazia o apply seguinte destruir as
+# rotas, e o gateway respondia 404 em tudo. Uma variavel nao tem esse modo de
+# falha: o padrao e o estado completo.
 
 # O NLB nasce do Service do Kubernetes, nao de um recurso do Terraform. Para
 # ligar o gateway nele e preciso descobri-lo pelas tags que o AWS Load Balancer
 # Controller aplica.
 data "aws_lb" "api" {
+  count = var.enable_gateway_routes ? 1 : 0
+
   tags = {
     "service.k8s.aws/stack" = "${local.app_namespace}/${local.app_service_name}"
   }
 }
 
 data "aws_lb_listener" "api" {
-  load_balancer_arn = data.aws_lb.api.arn
+  count = var.enable_gateway_routes ? 1 : 0
+
+  load_balancer_arn = data.aws_lb.api[0].arn
   port              = 80
 }
 
 resource "aws_apigatewayv2_integration" "cluster" {
+  count = var.enable_gateway_routes ? 1 : 0
+
   api_id             = aws_apigatewayv2_api.main.id
   integration_type   = "HTTP_PROXY"
   integration_method = "ANY"
-  integration_uri    = data.aws_lb_listener.api.arn
+  integration_uri    = data.aws_lb_listener.api[0].arn
 
   connection_type = "VPC_LINK"
   connection_id   = aws_apigatewayv2_vpc_link.main.id
@@ -48,11 +60,11 @@ resource "aws_apigatewayv2_integration" "cluster" {
 # Esquecer produz 404 em endpoint que existe -- por isso a lista fica visivel
 # numa variavel, e nao escondida no meio do recurso.
 resource "aws_apigatewayv2_route" "public" {
-  for_each = toset(var.public_routes)
+  for_each = var.enable_gateway_routes ? toset(var.public_routes) : toset([])
 
   api_id    = aws_apigatewayv2_api.main.id
   route_key = each.value
-  target    = "integrations/${aws_apigatewayv2_integration.cluster.id}"
+  target    = "integrations/${aws_apigatewayv2_integration.cluster[0].id}"
 }
 
 resource "aws_apigatewayv2_stage" "default" {
@@ -71,10 +83,17 @@ resource "aws_apigatewayv2_stage" "default" {
   # legitimo e a function, e ela faz uma consulta por autenticacao: nenhum uso
   # honesto chega perto disto. Com o segredo comprometido, este teto e o que
   # separa uma consulta pontual de uma varredura de CPFs.
-  route_settings {
-    route_key              = aws_apigatewayv2_route.customer_lookup.route_key
-    throttling_rate_limit  = var.lookup_throttling_rate_limit
-    throttling_burst_limit = var.lookup_throttling_burst_limit
+  #
+  # Dinamico porque a rota so existe com var.enable_gateway_routes: um
+  # route_settings apontando para rota inexistente falha o apply do stage.
+  dynamic "route_settings" {
+    for_each = var.enable_gateway_routes ? [1] : []
+
+    content {
+      route_key              = aws_apigatewayv2_route.customer_lookup[0].route_key
+      throttling_rate_limit  = var.lookup_throttling_rate_limit
+      throttling_burst_limit = var.lookup_throttling_burst_limit
+    }
   }
 
   access_log_settings {

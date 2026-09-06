@@ -50,7 +50,9 @@
 # sentido das outras. Misturar as duas na mesma lista apagaria a distincao
 # exatamente onde ela mais importa.
 resource "aws_apigatewayv2_route" "customer_lookup" {
+  count = var.enable_gateway_routes ? 1 : 0
+
   api_id    = aws_apigatewayv2_api.main.id
   route_key = "POST /auth/customers/lookup"
-  target    = "integrations/${aws_apigatewayv2_integration.cluster.id}"
+  target    = "integrations/${aws_apigatewayv2_integration.cluster[0].id}"
 }
