@@ -28,7 +28,9 @@ controlado e de instrumentação que mostre o que está acontecendo. Este reposi
 - **não faz o deploy da aplicação** — Deployment, Service, HPA e ConfigMap vêm do repositório da
   aplicação. Daqui sai só o **Namespace**, que é ambiente e não aplicação
 - **não cria o NLB** — ele nasce do Service da aplicação. A integração do gateway depende do ARN do
-  listener dele, e por isso é aplicada numa segunda fase, depois que a aplicação subiu
+  listener dele, e por isso é aplicada numa segunda fase, depois que a aplicação subiu. A variável
+  `enable_gateway_routes` é o que separa as duas fases: em `false`, integração, rotas e permissão da
+  function ficam fora do plano; no padrão `true`, entram
 
 ---
 
@@ -245,6 +247,14 @@ terraform init && terraform apply
 ```
 
 Cerca de 25 minutos no total, com o VPC Link sendo o recurso mais lento.
+
+Numa subida **do zero**, o primeiro apply vai com `-var enable_gateway_routes=false`, porque o NLB e
+a function ainda não existem. Depois do Service da aplicação e do apply do repositório das
+functions, um `terraform apply` sem `-var` cria integração e rotas. A ordem completa está no
+[runbook do ambiente](https://github.com/diandria/fiap-tech-challenge/blob/main/docs/runbook-ambiente.md).
+
+> Nunca use `enable_gateway_routes=false` num ambiente que já tem as rotas: o apply as destrói e o
+> gateway passa a responder 404.
 
 ### Ver o que está custando
 

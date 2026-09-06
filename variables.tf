@@ -75,6 +75,20 @@ variable "cluster_public_access_cidrs" {
   default     = ["0.0.0.0/0"]
 }
 
+variable "enable_gateway_routes" {
+  description = <<-TXT
+    Cria a integracao com o NLB, as rotas do gateway e a integracao com a
+    function de autenticacao.
+
+    Em `false` apenas na primeira fase de uma subida do zero: o NLB nasce do
+    Service da aplicacao e o ARN da function vem do estado remoto do
+    repositorio das functions, e nenhum dos dois existe antes deste cluster.
+    Nunca usar `false` num ambiente que ja tem as rotas: o apply as destroi.
+  TXT
+  type        = bool
+  default     = true
+}
+
 variable "cors_allowed_origins" {
   description = "Origens autorizadas pelo CORS do gateway."
   type        = list(string)
