@@ -280,6 +280,28 @@ functions, um `terraform apply` sem `-var` cria integração e rotas. A ordem co
 > Nunca use `enable_gateway_routes=false` num ambiente que já tem as rotas: o apply as destrói e o
 > gateway passa a responder 404.
 
+### Rotas por serviço
+
+O gateway tem uma integração por serviço, todas pelo mesmo VPC Link, e cada rota aponta para a integração
+do serviço dono dela (`public_routes`, em `variables.tf`):
+
+| Serviço | Rotas |
+|---|---|
+| OS | `/auth/login`, `/auth/register`, `/customers`, `/vehicles`, `/services`, `/items`, `/service-orders`, `/docs`, `/health`, `/ready` |
+| Billing | `GET` e `PATCH /service-orders/{id}/budget`, `POST /payments/notifications` |
+| Execution | `/executions` e tudo abaixo |
+
+As rotas de orçamento do Billing ficam dentro do prefixo `/service-orders` do OS sem conflito: o API Gateway
+HTTP escolhe primeiro a rota que casa por completo, mesmo com variável simples, e só depois a de variável
+gulosa (`{proxy+}`). O cliente continua chamando o mesmo caminho; muda só quem responde.
+
+A rota de notificação do Mercado Pago é pública, porque quem chama é o provedor. A proteção dela é a
+assinatura conferida pelo Billing, mais um limite próprio de requisições no gateway (10 por segundo).
+
+**Ordem de aplicação:** as rotas do Billing e do Execution só podem entrar depois do deploy dos dois
+serviços (o `plan` precisa encontrar os NLBs deles) e depois do deploy do OS que liga a saga. Antes disso, a
+decisão do orçamento ainda é do OS, e mandar a rota para o Billing quebraria o fluxo.
+
 ### Ver o que está custando
 
 ```bash

@@ -153,6 +153,24 @@ variable "public_routes" {
       "GET /health",
       "GET /ready",
     ]
+
+    # The customer keeps calling the same budget paths; only the owner
+    # changes. A full match with a path variable takes priority over the
+    # greedy ANY /service-orders/{proxy+} of the OS Service, so these two
+    # reach the billing service and every other order path stays where it was.
+    #
+    # The simulated payment route is left out: it exists only with the mock
+    # provider and is called from inside the cluster or the local compose.
+    billing = [
+      "GET /service-orders/{id}/budget",
+      "PATCH /service-orders/{id}/budget",
+      "POST /payments/notifications",
+    ]
+
+    execution = [
+      "ANY /executions",
+      "ANY /executions/{proxy+}",
+    ]
   }
 }
 
@@ -172,4 +190,23 @@ variable "lookup_throttling_burst_limit" {
   description = "Burst tolerated on the internal lookup route."
   type        = number
   default     = 10
+}
+
+variable "payment_notifications_throttling_rate_limit" {
+  description = <<-TXT
+    Requests-per-second ceiling on the Mercado Pago notification route.
+
+    The route is public by nature: the provider calls it. Its protection is the
+    signature checked by the billing service; this ceiling keeps a flood of
+    unsigned calls from reaching the service at all. Ten per second is far above
+    what one workshop's payments produce.
+  TXT
+  type        = number
+  default     = 10
+}
+
+variable "payment_notifications_throttling_burst_limit" {
+  description = "Burst tolerated on the Mercado Pago notification route."
+  type        = number
+  default     = 20
 }
