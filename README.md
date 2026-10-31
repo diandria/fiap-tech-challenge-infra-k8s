@@ -218,17 +218,26 @@ sozinho. Não há passo manual de importação.
 | Latência, healthchecks e uptime | p50/p95/p99 por rota, RPS, taxa de erro 5xx, uptime |
 | Recursos do Kubernetes | CPU e memória contra requests e limites, réplicas contra o HPA |
 
-As quatro regras de alerta e o `PodMonitor` da aplicação são **valores do chart**, no `metrics.tf`,
+As regras de alerta e o `PodMonitor` dos serviços são **valores do chart**, no `metrics.tf`,
 e não `kubernetes_manifest`. O motivo é de ordem: os CRDs `PodMonitor` e `PrometheusRule` só
 existem depois que o `kube-prometheus-stack` é aplicado, e um `kubernetes_manifest` exige o CRD já
 presente no `plan`. Numa subida do zero isso falha antes de criar qualquer coisa.
 
+Um único `PodMonitor` coleta os três serviços. Os namespaces vêm do mapa `local.services`, e o seletor
+usa os rótulos que os pods de API dos três têm em comum (`app.kubernetes.io/part-of: fiap-tech-challenge`
+e `app.kubernetes.io/component: api`), o que deixa de fora os pods do Job de migração. Todos os alvos
+ficam com `job="observability/car-repair-shop"`, e o rótulo `namespace` diz de qual serviço é a série.
+
 | Alerta | Condição | Severidade |
 |---|---|---|
 | `ServiceOrderProcessingFailures` | falhas de integração no processamento | crítico |
-| `ApplicationDown` | nenhum alvo respondendo ao scrape | crítico |
-| `HighErrorRate` | mais de 5% de 5xx | crítico |
-| `HighApiLatency` | p95 acima de 1s | aviso |
+| `ApplicationDown` | nenhum alvo de um serviço respondendo ao scrape; uma regra por serviço, com o rótulo `service` | crítico |
+| `HighErrorRate` | mais de 5% de 5xx em um serviço | crítico |
+| `HighApiLatency` | p95 de um serviço acima de 1s | aviso |
+
+`ApplicationDown` é gerado a partir do mapa de serviços, uma regra para cada um. Uma soma só sobre os três
+dispararia apenas com todos fora do ar, e um serviço parado já congela a saga. Taxa de erro e latência são
+calculadas por `namespace` pelo mesmo motivo: o volume de um serviço diluiria os erros de outro.
 
 Duas expressões merecem atenção, porque a versão ingênua **não dispara**:
 
