@@ -4,7 +4,7 @@ data "terraform_remote_state" "lambda" {
   backend = "s3"
 
   config = {
-    bucket = "fiap-tech-challenge-tfstate-108337503570"
+    bucket = "fiap-tech-challenge-tfstate-938405266463"
     key    = "lambda/terraform.tfstate"
     region = "us-east-1"
   }
