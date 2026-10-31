@@ -15,5 +15,15 @@ locals {
       k8s_service = "car-repair-shop-api"
       registry    = "car-repair-shop"
     }
+    billing = {
+      namespace   = "car-repair-shop-billing"
+      k8s_service = "billing-api"
+      registry    = "car-repair-shop-billing"
+    }
+    execution = {
+      namespace   = "car-repair-shop-execution"
+      k8s_service = "execution-api"
+      registry    = "car-repair-shop-execution"
+    }
   }
 }
