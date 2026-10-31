@@ -1,10 +1,12 @@
-# Registry for the application image.
+# One image registry per service.
 #
 # It lives here rather than in the application repository because it is
 # long-lived infrastructure: the ECR repository outlives any deploy, and
 # deleting it during a rollback would lose every previous tag.
-resource "aws_ecr_repository" "app" {
-  name = local.cluster_name
+resource "aws_ecr_repository" "service" {
+  for_each = local.services
+
+  name = each.value.registry
 
   # Immutable on purpose. With mutable tags, overwriting an already published
   # SHA would go unnoticed and two deploys of the "same" SHA would run
@@ -22,8 +24,10 @@ resource "aws_ecr_repository" "app" {
 
 # Sem expiracao, cada deploy acumula uma imagem de ~200 MB para sempre. Dez
 # imagens cobrem qualquer rollback plausivel neste projeto.
-resource "aws_ecr_lifecycle_policy" "app" {
-  repository = aws_ecr_repository.app.name
+resource "aws_ecr_lifecycle_policy" "service" {
+  for_each = local.services
+
+  repository = aws_ecr_repository.service[each.key].name
 
   policy = jsonencode({
     rules = [
@@ -39,4 +43,16 @@ resource "aws_ecr_lifecycle_policy" "app" {
       },
     ]
   })
+}
+
+# The registry of the OS Service existed before the map. Recreating it would
+# delete every published tag, and with them any rollback.
+moved {
+  from = aws_ecr_repository.app
+  to   = aws_ecr_repository.service["os"]
+}
+
+moved {
+  from = aws_ecr_lifecycle_policy.app
+  to   = aws_ecr_lifecycle_policy.service["os"]
 }

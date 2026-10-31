@@ -15,7 +15,7 @@ data "aws_lb" "api" {
   count = var.enable_gateway_routes ? 1 : 0
 
   tags = {
-    "service.k8s.aws/stack" = "${local.app_namespace}/${local.app_service_name}"
+    "service.k8s.aws/stack" = "${local.services.os.namespace}/${local.services.os.k8s_service}"
   }
 }
 

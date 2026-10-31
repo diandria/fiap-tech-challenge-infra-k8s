@@ -14,16 +14,17 @@
 # not find the resources but AWS keeps billing. On EKS that is worse than on
 # RDS, because the node group outlives the cluster and keeps billing EC2.
 #
-# The application Service is deleted before the destroy, not after. It lives in
-# the application repository and owns the NLB, which this Terraform does not
-# know about, so destroying the cluster first leaves the balancer orphaned and
-# billing. APP_MANIFESTS points at the manifests; adjust if the repository sits
-# elsewhere.
+# The services' Kubernetes Services are deleted before the destroy, not after.
+# They live in each service's repository and own the NLBs, which this
+# Terraform does not know about, so destroying the cluster first leaves the
+# balancers orphaned and billing. APP_MANIFESTS points at the OS Service
+# manifests; adjust if the repository sits elsewhere.
 set -uo pipefail
 
 REGION="${AWS_REGION:-us-east-1}"
 CLUSTER="${CLUSTER_NAME:-car-repair-shop}"
 APP_MANIFESTS="${APP_MANIFESTS:-$HOME/dev/fiap-tech-challenge/k8s}"
+SERVICE_NAMESPACES="car-repair-shop-billing car-repair-shop-execution"
 
 SWEEP=false; ASSUME_YES=false
 for arg in "$@"; do
@@ -49,24 +50,33 @@ confirm() {
   [ "$reply" = "yes" ] || { echo "Cancelled."; exit 0; }
 }
 
-echo "== 1. removing the application and the NLB it creates =="
-# The Service belongs to the application repository and is not in the Terraform
-# state. Deleting it here lets the AWS Load Balancer Controller, still running,
-# remove the NLB properly. Once the cluster is gone, nothing can.
-if [ -d "$APP_MANIFESTS" ] && command -v kubectl >/dev/null 2>&1 \
+echo "== 1. removing the services and the NLBs they create =="
+# The Services belong to the services' repositories and are not in the
+# Terraform state. Deleting them here lets the AWS Load Balancer Controller,
+# still running, remove the NLBs properly. Once the cluster is gone, nothing can.
+if command -v kubectl >/dev/null 2>&1 \
    && aws eks list-clusters --region "$REGION" --query 'clusters[]' --output text 2>/dev/null | grep -qw "$CLUSTER"; then
   aws eks update-kubeconfig --name "$CLUSTER" --region "$REGION" >/dev/null 2>&1
-  kubectl delete -f "$APP_MANIFESTS/03-app/" --ignore-not-found >/dev/null 2>&1
-  kubectl delete -f "$APP_MANIFESTS/02-service/" --ignore-not-found >/dev/null 2>&1 \
-    && echo "  Service removed; waiting for the NLB to go"
+  if [ -d "$APP_MANIFESTS" ]; then
+    kubectl delete -f "$APP_MANIFESTS/03-app/" --ignore-not-found >/dev/null 2>&1
+    kubectl delete -f "$APP_MANIFESTS/02-service/" --ignore-not-found >/dev/null 2>&1 \
+      && echo "  OS Service removed"
+  fi
+  # Billing and Execution own an NLB each too. Deleting their Services by
+  # namespace needs no copy of their repositories.
+  for ns in $SERVICE_NAMESPACES; do
+    kubectl delete service --all -n "$ns" --ignore-not-found >/dev/null 2>&1 \
+      && echo "  Services in $ns removed"
+  done
+  echo "  waiting for the NLBs to go"
   for _ in $(seq 1 30); do
     n=$(aws elbv2 describe-load-balancers --region "$REGION" \
         --query 'length(LoadBalancers)' --output text 2>/dev/null)
-    [ "$n" = "0" ] && { echo "  NLB removed"; break; }
+    [ "$n" = "0" ] && { echo "  NLBs removed"; break; }
     sleep 5
   done
 else
-  echo "  cluster absent or manifests not found; the sweep covers the NLB"
+  echo "  cluster absent or kubectl not found; the sweep covers the NLBs"
 fi
 
 echo

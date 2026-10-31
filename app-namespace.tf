@@ -1,4 +1,4 @@
-# Application namespace.
+# One namespace per service.
 #
 # A namespace is environment, not application: it exists before any deploy and
 # outlives all of them, which is why it belongs here.
@@ -11,8 +11,17 @@
 # the gateway integration needs its listener ARN. The resources that depend on
 # it live in api-gateway-routes.tf, behind var.enable_gateway_routes, and are
 # applied in a second phase once the application is up.
-resource "kubernetes_namespace_v1" "app" {
+resource "kubernetes_namespace_v1" "service" {
+  for_each = local.services
+
   metadata {
-    name = local.app_namespace
+    name = each.value.namespace
   }
+}
+
+# The namespace of the OS Service existed before the map; without this it
+# would be destroyed and recreated, taking everything inside it along.
+moved {
+  from = kubernetes_namespace_v1.app
+  to   = kubernetes_namespace_v1.service["os"]
 }

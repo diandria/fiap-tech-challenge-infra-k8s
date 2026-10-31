@@ -20,14 +20,16 @@ controlado e de instrumentação que mostre o que está acontecendo. Este reposi
 | Tempo | tracing distribuído |
 | API Gateway e VPC Link | ponto único de entrada, com throttling |
 | Filas SQS FIFO da saga, cada uma com fila de descarte | comunicação assíncrona entre os três serviços |
+| Um namespace e um repositório ECR por serviço (OS, Billing e Execution) | isolamento entre os serviços no mesmo cluster |
 
 ## O que este repositório **não** faz
 
 - **não cria VPC** — consome a default da região
 - **não cria o banco** — isso é do repositório de infraestrutura do banco, cujo estado é lido aqui
 - **não cria role de IAM** — o Learner Lab restringe; cluster e nós assumem a `LabRole` existente
-- **não faz o deploy da aplicação** — Deployment, Service, HPA e ConfigMap vêm do repositório da
-  aplicação. Daqui sai só o **Namespace**, que é ambiente e não aplicação
+- **não faz o deploy dos serviços** — Deployment, Service, HPA e ConfigMap vêm do repositório de cada
+  serviço. Daqui sai só o **Namespace** de cada um, que é ambiente e não aplicação. Os nomes de namespace,
+  Service e repositório de imagem de cada serviço ficam no mapa `services` de `locals.tf`
 - **não cria o NLB** — ele nasce do Service da aplicação. A integração do gateway depende do ARN do
   listener dele, e por isso é aplicada numa segunda fase, depois que a aplicação subiu. A variável
   `enable_gateway_routes` é o que separa as duas fases: em `false`, integração, rotas e permissão da

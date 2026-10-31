@@ -130,8 +130,8 @@ resource "helm_release" "kube_prometheus_stack" {
           # The application lives in another namespace. Without this Prometheus
           # searches only its own, finds nothing and reports no error: the
           # target simply never appears and the dashboard is empty.
-          namespaceSelector = { matchNames = [local.app_namespace] }
-          selector          = { matchLabels = { app = local.app_service_name } }
+          namespaceSelector = { matchNames = [local.services.os.namespace] }
+          selector          = { matchLabels = { app = local.services.os.k8s_service } }
 
           podMetricsEndpoints = [
             {

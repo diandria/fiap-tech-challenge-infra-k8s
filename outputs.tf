@@ -54,7 +54,7 @@ output "vpc_link_id" {
 
 output "ecr_repository_url" {
   description = "URL of the application ECR repository, consumed by the CD."
-  value       = aws_ecr_repository.app.repository_url
+  value       = aws_ecr_repository.service["os"].repository_url
 }
 
 output "saga_queue_urls" {
@@ -65,4 +65,14 @@ output "saga_queue_urls" {
 output "saga_dead_letter_queue_urls" {
   description = "URL of the dead-letter queue of each saga queue, by name. The OS Service reads the command ones."
   value       = { for name, queue in aws_sqs_queue.saga_dlq : name => queue.url }
+}
+
+output "ecr_repository_urls" {
+  description = "URL of the ECR repository of each service, by service (os, billing, execution). Consumed by each service's CD."
+  value       = { for name, repository in aws_ecr_repository.service : name => repository.repository_url }
+}
+
+output "service_namespaces" {
+  description = "Kubernetes namespace of each service, by service."
+  value       = { for name, namespace in kubernetes_namespace_v1.service : name => namespace.metadata[0].name }
 }
