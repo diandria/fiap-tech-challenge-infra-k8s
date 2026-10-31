@@ -19,6 +19,7 @@ controlado e de instrumentação que mostre o que está acontecendo. Este reposi
 | Loki e Promtail | logs |
 | Tempo | tracing distribuído |
 | API Gateway e VPC Link | ponto único de entrada, com throttling |
+| Filas SQS FIFO da saga, cada uma com fila de descarte | comunicação assíncrona entre os três serviços |
 
 ## O que este repositório **não** faz
 
@@ -87,6 +88,27 @@ A seta de ida e volta entre Loki e Tempo é a correlação: de um log lento se c
 span se chega às linhas de log daquela requisição.
 
 ---
+
+### Filas da saga
+
+As filas são o broker da saga entre o OS Service, o Billing e o Execution, e por isso ficam aqui, junto do
+cluster: os três serviços publicam e consomem nelas. Os nomes e os parâmetros seguem o ADR-015, no
+repositório `fiap-tech-challenge`.
+
+| Fila | Quem publica | Quem consome |
+|---|---|---|
+| `car-repair-shop-billing-commands.fifo` | OS | Billing |
+| `car-repair-shop-execution-commands.fifo` | OS | Execution |
+| `car-repair-shop-saga-replies.fifo` | Billing e Execution | OS |
+
+Todas são FIFO, agrupadas pelo id da ordem de serviço, com deduplicação pelo `messageId` do envelope
+(a deduplicação por conteúdo fica desligada), visibilidade de 30 segundos e espera longa de 20 segundos.
+Depois de cinco recebimentos sem sucesso, a mensagem vai para a fila `-dlq.fifo` correspondente, que guarda
+por 14 dias. As URLs saem nos outputs `saga_queue_urls` e `saga_dead_letter_queue_urls`, que o deploy de
+cada serviço lê.
+
+Filas paradas não custam nada: a cobrança é por requisição e fica dentro da camada gratuita no volume do
+projeto.
 
 ## Tecnologias
 

@@ -106,6 +106,17 @@ else
   say "  none"
 fi
 
+# Listed for completeness: idle queues cost nothing, so they add nothing to
+# the estimate, but a queue left behind is still something to clean up.
+head2 "SQS queues"
+sqs=$(aws sqs list-queues --region "$REGION" --queue-name-prefix car-repair-shop- \
+  --query 'QueueUrls[]' --output text 2>/dev/null)
+if [ -n "$sqs" ] && [ "$sqs" != "None" ]; then
+  for q in $sqs; do say "  ${q##*/}  (no cost while idle)"; done
+else
+  say "  none"
+fi
+
 DAY=$(awk -v h="$TOTAL_HOUR" 'BEGIN{printf "%.2f", h*24}')
 MONTH=$(awk -v h="$TOTAL_HOUR" 'BEGIN{printf "%.2f", h*730}')
 
