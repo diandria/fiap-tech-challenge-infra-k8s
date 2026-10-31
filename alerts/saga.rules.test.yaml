@@ -1,0 +1,119 @@
+# Unit tests for the saga alerts: promtool test rules alerts/saga.rules.test.yaml
+#
+# Samples every 15s, the PodMonitor interval. A message that keeps failing
+# comes back every 30s (the queue's visibility timeout) and reaches the
+# dead-letter queue after five receives.
+rule_files:
+  - saga.rules.yaml
+
+evaluation_interval: 30s
+
+tests:
+  - name: a healthy system raises nothing
+    interval: 15s
+    input_series:
+      - series: 'messages_consumed_total{namespace="car-repair-shop-execution",queue="execution-commands",type="EnqueueDiagnosis",outcome="processed"}'
+        values: '0+1x80'
+      # The relay drains in about a second; a scrape now and then catches a message waiting.
+      - series: 'outbox_pending_messages{namespace="car-repair-shop",pod="api-1"}'
+        values: '0 0 2 0 0 0 1 0 0 0 0 3 0 0 0 0 0 0 1 0 0x60'
+      - series: 'saga_compensations_total{reason="BUDGET_REJECTED"}'
+        values: '0x40 1x40'
+      - series: 'saga_stuck_total{command="EnqueueRepair"}'
+        values: '0x80'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: SagaMessageFailing
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: OutboxBacklog
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: SagaCompensationsSpike
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: SagaStepStuck
+        exp_alerts: []
+
+  - name: one failure that recovers on the retry raises nothing
+    interval: 15s
+    input_series:
+      - series: 'messages_consumed_total{namespace="car-repair-shop-billing",queue="billing-commands",type="RequestPayment",outcome="failed"}'
+        values: '1x20 2x60'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: SagaMessageFailing
+        exp_alerts: []
+
+  - name: a message failing on every receive alerts before it is dead-lettered for good
+    interval: 15s
+    input_series:
+      - series: 'messages_consumed_total{namespace="car-repair-shop-execution",queue="execution-commands",type="ShipParts",outcome="failed"}'
+        values: '_x4 1 1 2 2 3 3 4 4 5 5x40'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: SagaMessageFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: car-repair-shop-execution
+              queue: execution-commands
+              type: ShipParts
+            exp_annotations:
+              summary: "Mensagens ShipParts falhando em car-repair-shop-execution"
+              description: "A fila execution-commands entregou mensagens ShipParts que falharam repetidamente nos ultimos 10 minutos. Na quinta falha a mensagem vai para a fila de descarte e a saga daquela ordem e compensada ou trava."
+
+  - name: an outbox that stops draining alerts after five minutes
+    interval: 15s
+    input_series:
+      - series: 'outbox_pending_messages{namespace="car-repair-shop-billing",pod="billing-1"}'
+        values: '0x4 3x40'
+      - series: 'outbox_pending_messages{namespace="car-repair-shop-billing",pod="billing-2"}'
+        values: '0x4 3x40'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: OutboxBacklog
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: OutboxBacklog
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              namespace: car-repair-shop-billing
+            exp_annotations:
+              summary: "Outbox de car-repair-shop-billing parado"
+              description: "Ha 3 mensagens esperando publicacao ha mais de 5 minutos. O relay publica em cerca de um segundo, entao a fila esta inacessivel ou o relay parou."
+
+  - name: compensations above the expected volume alert
+    interval: 1m
+    input_series:
+      - series: 'saga_compensations_total{reason="PAYMENT_FAILED"}'
+        values: '0x5 0+2x10'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: SagaCompensationsSpike
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: SagaCompensationsSpike
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: "Compensacoes acima do esperado"
+              description: "Mais de 10 sagas compensadas nos ultimos 30 minutos. Veja o motivo no painel da saga: rejeicao e recusa de pagamento sao negocio, STEP_FAILED e falha tecnica."
+
+  - name: the first stuck step alerts at once
+    interval: 15s
+    input_series:
+      - series: 'saga_stuck_total{command="EnqueueRepair"}'
+        values: '0x8 1x40'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: SagaStepStuck
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              command: EnqueueRepair
+            exp_annotations:
+              summary: "Etapa EnqueueRepair travada"
+              description: "Um comando EnqueueRepair esgotou as tentativas depois do ponto em que a saga ainda podia ser desfeita. A ordem precisa de uma pessoa; o log de erro do OS traz o id dela."

@@ -60,6 +60,27 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "1"
 
+  # The alert rules are code with behavior: each test feeds sample series and
+  # states which alerts must fire and which must stay quiet.
+  alerts:
+    name: Alert rules
+    runs-on: ubuntu-latest
+    env:
+      PROMETHEUS_VERSION: "2.55.1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install promtool
+        run: |
+          curl -sSL "https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz" \
+            | tar xz --strip-components=1 "prometheus-${PROMETHEUS_VERSION}.linux-amd64/promtool"
+          ./promtool --version
+
+      - name: Check and test the rules
+        run: |
+          ./promtool check rules alerts/saga.rules.yaml
+          ./promtool test rules alerts/saga.rules.test.yaml
+
   plan:
     name: Change plan
     needs: validate

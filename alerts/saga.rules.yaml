@@ -1,0 +1,55 @@
+# Alerts for the service order saga, loaded by metrics.tf as their own rule
+# group. A separate file rather than HCL so the exact rules that reach the
+# cluster are the ones `promtool test rules alerts/saga.rules.test.yaml` runs.
+#
+# Each alert is a signal that needs someone to act. A message failing once and
+# succeeding on the retry is the queue doing its job and stays quiet.
+groups:
+  - name: saga
+    rules:
+      # A message comes back every 30 seconds (the queue's visibility timeout)
+      # and goes to the dead-letter queue on the fifth failure. Two failures of
+      # the same type within 10 minutes means it is on that path; a single one
+      # is a retry that may still succeed.
+      - alert: SagaMessageFailing
+        expr: sum by (namespace, queue, type) (increase(messages_consumed_total{outcome="failed"}[10m])) >= 2
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Mensagens {{ $labels.type }} falhando em {{ $labels.namespace }}"
+          description: "A fila {{ $labels.queue }} entregou mensagens {{ $labels.type }} que falharam repetidamente nos ultimos 10 minutos. Na quinta falha a mensagem vai para a fila de descarte e a saga daquela ordem e compensada ou trava."
+
+      # Any backlog, not a large one: the relay publishes in about a second, so
+      # a message waiting for five minutes means it is not publishing at all,
+      # whatever the volume. max, not sum, because every replica of a service
+      # reports the same outbox.
+      - alert: OutboxBacklog
+        expr: max by (namespace) (outbox_pending_messages) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Outbox de {{ $labels.namespace }} parado"
+          description: "Ha {{ $value }} mensagens esperando publicacao ha mais de 5 minutos. O relay publica em cerca de um segundo, entao a fila esta inacessivel ou o relay parou."
+
+      # A starting number for the demonstration volume, not a measured
+      # baseline. Rejections and refused payments are expected; a spike of them
+      # is what deserves a look.
+      - alert: SagaCompensationsSpike
+        expr: sum(increase(saga_compensations_total[30m])) > 10
+        labels:
+          severity: warning
+        annotations:
+          summary: "Compensacoes acima do esperado"
+          description: "Mais de 10 sagas compensadas nos ultimos 30 minutos. Veja o motivo no painel da saga: rejeicao e recusa de pagamento sao negocio, STEP_FAILED e falha tecnica."
+
+      # No retry and no compensation left: the order needs a person. The OS
+      # starts this counter at zero, so the first stuck step is seen.
+      - alert: SagaStepStuck
+        expr: sum by (command) (increase(saga_stuck_total[15m])) > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Etapa {{ $labels.command }} travada"
+          description: "Um comando {{ $labels.command }} esgotou as tentativas depois do ponto em que a saga ainda podia ser desfeita. A ordem precisa de uma pessoa; o log de erro do OS traz o id dela."

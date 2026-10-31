@@ -86,6 +86,10 @@ resource "helm_release" "kube_prometheus_stack" {
           }
         ]
       }
+
+      # The saga alerts live in a file of their own, so CI can run promtool's
+      # unit tests on exactly what reaches the cluster.
+      saga = yamldecode(file("${path.module}/alerts/saga.rules.yaml"))
     }
 
     prometheus = {
