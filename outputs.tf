@@ -56,3 +56,13 @@ output "ecr_repository_url" {
   description = "URL of the application ECR repository, consumed by the CD."
   value       = aws_ecr_repository.app.repository_url
 }
+
+output "saga_queue_urls" {
+  description = "URL of each saga queue, by name (billing-commands, execution-commands, saga-replies). Consumed by the CD of each service."
+  value       = { for name, queue in aws_sqs_queue.saga : name => queue.url }
+}
+
+output "saga_dead_letter_queue_urls" {
+  description = "URL of the dead-letter queue of each saga queue, by name. The OS Service reads the command ones."
+  value       = { for name, queue in aws_sqs_queue.saga_dlq : name => queue.url }
+}
