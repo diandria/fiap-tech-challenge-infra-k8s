@@ -110,7 +110,9 @@ variable "throttling_burst_limit" {
 
 variable "public_routes" {
   description = <<-TXT
-    Routes the gateway forwards to the cluster.
+    Routes the gateway forwards to the cluster, by service. The key is an entry
+    of local.services; each service gets its own integration, pointing at the
+    NLB of its Kubernetes Service.
 
     An explicit list rather than a wildcard: anything absent answers 404 without
     reaching the application. Every externally reachable route is a written
@@ -125,31 +127,33 @@ variable "public_routes" {
                               api-gateway-lookup-route.tf
       /metrics                scraped by Prometheus from inside the cluster
   TXT
-  type        = list(string)
+  type        = map(list(string))
 
-  default = [
-    "POST /auth/login",
-    "POST /auth/register",
+  default = {
+    os = [
+      "POST /auth/login",
+      "POST /auth/register",
 
-    "ANY /customers",
-    "ANY /customers/{proxy+}",
-    "ANY /vehicles",
-    "ANY /vehicles/{proxy+}",
-    "ANY /services",
-    "ANY /services/{proxy+}",
-    "ANY /items",
-    "ANY /items/{proxy+}",
-    "ANY /service-orders",
-    "ANY /service-orders/{proxy+}",
+      "ANY /customers",
+      "ANY /customers/{proxy+}",
+      "ANY /vehicles",
+      "ANY /vehicles/{proxy+}",
+      "ANY /services",
+      "ANY /services/{proxy+}",
+      "ANY /items",
+      "ANY /items/{proxy+}",
+      "ANY /service-orders",
+      "ANY /service-orders/{proxy+}",
 
-    # API documentation.
-    "GET /docs",
-    "GET /docs/{proxy+}",
+      # API documentation.
+      "GET /docs",
+      "GET /docs/{proxy+}",
 
-    # Probes: useful to check the path from outside without depending on data.
-    "GET /health",
-    "GET /ready",
-  ]
+      # Probes: useful to check the path from outside without depending on data.
+      "GET /health",
+      "GET /ready",
+    ]
+  }
 }
 
 variable "lookup_throttling_rate_limit" {
