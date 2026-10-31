@@ -1,6 +1,6 @@
-# Gateway resources that depend on the application NLB.
+# Gateway resources that depend on the services' NLBs.
 #
-# The NLB is born from the Service in k8s/02-service/ of the application
+# Each NLB is born from the Service in k8s/02-service/ of the service's
 # repository. Nothing here can be planned before that Service exists:
 # `data.aws_lb` fails the plan, not just the apply.
 #
@@ -9,36 +9,58 @@
 # the variable is `false` and none of these resources enter the plan; the second
 # apply, with the default `true`, creates integration, routes and permission.
 
-# The NLB is born from the Kubernetes Service, not from a Terraform resource, so
-# it is discovered through the tags the AWS Load Balancer Controller applies.
-data "aws_lb" "api" {
-  count = var.enable_gateway_routes ? 1 : 0
+locals {
+  # Only the services that have routes get an integration. A service whose NLB
+  # does not exist yet, because it was never deployed, stays out of the plan
+  # instead of failing it.
+  routed_services = var.enable_gateway_routes ? toset(keys(var.public_routes)) : toset([])
+
+  # route key -> service. Route keys are unique in the gateway, so each route
+  # keeps the same address in the state whichever service it points to.
+  routes = merge([
+    for service, keys in var.public_routes : { for key in keys : key => service }
+  ]...)
+}
+
+# Each NLB is born from a service's Kubernetes Service, not from a Terraform
+# resource, so it is discovered through the tags the AWS Load Balancer
+# Controller applies: namespace/name of the Service.
+data "aws_lb" "service" {
+  for_each = local.routed_services
 
   tags = {
-    "service.k8s.aws/stack" = "${local.services.os.namespace}/${local.services.os.k8s_service}"
+    "service.k8s.aws/stack" = "${local.services[each.key].namespace}/${local.services[each.key].k8s_service}"
   }
 }
 
-data "aws_lb_listener" "api" {
-  count = var.enable_gateway_routes ? 1 : 0
+data "aws_lb_listener" "service" {
+  for_each = local.routed_services
 
-  load_balancer_arn = data.aws_lb.api[0].arn
+  load_balancer_arn = data.aws_lb.service[each.key].arn
   port              = 80
 }
 
-resource "aws_apigatewayv2_integration" "cluster" {
-  count = var.enable_gateway_routes ? 1 : 0
+# One integration per service, all through the same VPC Link.
+resource "aws_apigatewayv2_integration" "service" {
+  for_each = local.routed_services
 
   api_id             = aws_apigatewayv2_api.main.id
   integration_type   = "HTTP_PROXY"
   integration_method = "ANY"
-  integration_uri    = data.aws_lb_listener.api[0].arn
+  integration_uri    = data.aws_lb_listener.service[each.key].arn
 
   connection_type = "VPC_LINK"
   connection_id   = aws_apigatewayv2_vpc_link.main.id
 
   payload_format_version = "1.0"
   timeout_milliseconds   = 29000
+}
+
+# The single integration of the OS Service, from before the services map.
+# Without this it would be destroyed and recreated, and every route with it.
+moved {
+  from = aws_apigatewayv2_integration.cluster[0]
+  to   = aws_apigatewayv2_integration.service["os"]
 }
 
 # Routes are enumerated rather than a wildcard ANY /{proxy+}.
@@ -49,15 +71,15 @@ resource "aws_apigatewayv2_integration" "cluster" {
 # The internal lookup has its own route in api-gateway-lookup-route.tf, outside
 # this list on purpose.
 #
-# The cost: a new prefix in the application needs a new route here, and
-# forgetting produces a 404 on an endpoint that exists. That is why the list is
-# a visible variable rather than buried in the resource.
+# The cost: a new prefix in a service needs a new route here, and forgetting
+# produces a 404 on an endpoint that exists. That is why the list is a visible
+# variable rather than buried in the resource.
 resource "aws_apigatewayv2_route" "public" {
-  for_each = var.enable_gateway_routes ? toset(var.public_routes) : toset([])
+  for_each = var.enable_gateway_routes ? local.routes : {}
 
   api_id    = aws_apigatewayv2_api.main.id
-  route_key = each.value
-  target    = "integrations/${aws_apigatewayv2_integration.cluster[0].id}"
+  route_key = each.key
+  target    = "integrations/${aws_apigatewayv2_integration.service[each.value].id}"
 }
 
 resource "aws_apigatewayv2_stage" "default" {

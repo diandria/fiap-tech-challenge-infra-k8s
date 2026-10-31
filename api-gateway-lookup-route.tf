@@ -26,5 +26,5 @@ resource "aws_apigatewayv2_route" "customer_lookup" {
 
   api_id    = aws_apigatewayv2_api.main.id
   route_key = "POST /auth/customers/lookup"
-  target    = "integrations/${aws_apigatewayv2_integration.cluster[0].id}"
+  target    = "integrations/${aws_apigatewayv2_integration.service["os"].id}"
 }
