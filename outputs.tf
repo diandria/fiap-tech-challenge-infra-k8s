@@ -54,7 +54,7 @@ output "vpc_link_id" {
 
 output "ecr_repository_url" {
   description = "URL of the application ECR repository, consumed by the CD."
-  value       = aws_ecr_repository.app.repository_url
+  value       = aws_ecr_repository.service["os"].repository_url
 }
 
 output "saga_queue_urls" {
