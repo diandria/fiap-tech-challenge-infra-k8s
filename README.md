@@ -219,17 +219,26 @@ sozinho. Não há passo manual de importação.
 | Latência, healthchecks e uptime | p50/p95/p99 por rota, RPS, taxa de erro 5xx, uptime; o seletor **Serviço** escolhe o namespace |
 | Recursos do Kubernetes | CPU e memória contra requests e limites, réplicas contra o HPA |
 
-As quatro regras de alerta e o `PodMonitor` da aplicação são **valores do chart**, no `metrics.tf`,
+As regras de alerta e o `PodMonitor` dos serviços são **valores do chart**, no `metrics.tf`,
 e não `kubernetes_manifest`. O motivo é de ordem: os CRDs `PodMonitor` e `PrometheusRule` só
 existem depois que o `kube-prometheus-stack` é aplicado, e um `kubernetes_manifest` exige o CRD já
 presente no `plan`. Numa subida do zero isso falha antes de criar qualquer coisa.
 
+Um único `PodMonitor` coleta os três serviços. Os namespaces vêm do mapa `local.services`, e o seletor
+usa os rótulos que os pods de API dos três têm em comum (`app.kubernetes.io/part-of: fiap-tech-challenge`
+e `app.kubernetes.io/component: api`), o que deixa de fora os pods do Job de migração. Todos os alvos
+ficam com `job="observability/car-repair-shop"`, e o rótulo `namespace` diz de qual serviço é a série.
+
 | Alerta | Condição | Severidade |
 |---|---|---|
 | `ServiceOrderProcessingFailures` | falhas de integração no processamento | crítico |
-| `ApplicationDown` | nenhum alvo respondendo ao scrape | crítico |
-| `HighErrorRate` | mais de 5% de 5xx | crítico |
-| `HighApiLatency` | p95 acima de 1s | aviso |
+| `ApplicationDown` | nenhum alvo de um serviço respondendo ao scrape; uma regra por serviço, com o rótulo `service` | crítico |
+| `HighErrorRate` | mais de 5% de 5xx em um serviço | crítico |
+| `HighApiLatency` | p95 de um serviço acima de 1s | aviso |
+
+`ApplicationDown` é gerado a partir do mapa de serviços, uma regra para cada um. Uma soma só sobre os três
+dispararia apenas com todos fora do ar, e um serviço parado já congela a saga. Taxa de erro e latência são
+calculadas por `namespace` pelo mesmo motivo: o volume de um serviço diluiria os erros de outro.
 
 Duas expressões merecem atenção, porque a versão ingênua **não dispara**:
 
@@ -280,6 +289,32 @@ functions, um `terraform apply` sem `-var` cria integração e rotas. A ordem co
 
 > Nunca use `enable_gateway_routes=false` num ambiente que já tem as rotas: o apply as destrói e o
 > gateway passa a responder 404.
+
+### Rotas por serviço
+
+O gateway tem uma integração por serviço, todas pelo mesmo VPC Link, e cada rota aponta para a integração
+do serviço dono dela (`public_routes`, em `variables.tf`):
+
+| Serviço | Rotas |
+|---|---|
+| OS | `/auth/login`, `/auth/register`, `/customers`, `/vehicles`, `/services`, `/items`, `/service-orders`, `/docs`, `/health`, `/ready` |
+| Billing | `GET` e `PATCH /service-orders/{id}/budget`, `POST /payments/notifications`, `POST /payments/mock/{serviceOrderId}` |
+| Execution | `/executions` e tudo abaixo |
+
+As rotas de orçamento do Billing ficam dentro do prefixo `/service-orders` do OS sem conflito: o API Gateway
+HTTP escolhe primeiro a rota que casa por completo, mesmo com variável simples, e só depois a de variável
+gulosa (`{proxy+}`). O cliente continua chamando o mesmo caminho; muda só quem responde.
+
+A rota de notificação do Mercado Pago é pública, porque quem chama é o provedor. A proteção dela é a
+assinatura conferida pelo Billing, mais um limite próprio de requisições no gateway (10 por segundo).
+
+A rota `POST /payments/mock/{serviceOrderId}` só responde quando o Billing roda com o provedor simulado
+(`PAYMENT_PROVIDER=mock`): ela faz o papel do cliente pagando e exige o token de administrador. Com o
+Mercado Pago ligado, o Billing não monta essa rota e a chamada termina em 404.
+
+**Ordem de aplicação:** as rotas do Billing e do Execution só podem entrar depois do deploy dos dois
+serviços (o `plan` precisa encontrar os NLBs deles) e depois do deploy do OS que liga a saga. Antes disso, a
+decisão do orçamento ainda é do OS, e mandar a rota para o Billing quebraria o fluxo.
 
 ### Ver o que está custando
 
