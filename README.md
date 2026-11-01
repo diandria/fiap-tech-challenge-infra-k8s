@@ -251,6 +251,35 @@ Duas expressões merecem atenção, porque a versão ingênua **não dispara**:
 O `for` do `ServiceOrderProcessingFailures` está em 1 minuto, encurtado para a demonstração;
 produção pediria 5. Está anotado na própria regra.
 
+### Alertas da saga
+
+Os alertas da saga ficam em `alerts/saga.rules.yaml`, num grupo próprio que o `metrics.tf` carrega com
+`yamldecode(file(...))`. Ficar num arquivo YAML, e não em HCL, permite que o job `Alert rules` do CI rode
+`promtool test rules alerts/saga.rules.test.yaml` sobre exatamente o que vai para o cluster. Cada teste
+alimenta séries de exemplo e diz quais alertas precisam disparar e quais precisam ficar quietos, inclusive
+com o sistema saudável.
+
+| Alerta | Condição | Severidade | O que fazer |
+|---|---|---|---|
+| `SagaMessageFailing` | 2 ou mais falhas da mesma mensagem (serviço, fila, tipo) em 10 minutos, por 1 minuto | aviso | Ver o log do serviço com o `type` do alerta; na quinta falha a mensagem vai para a fila de descarte e o OS compensa |
+| `OutboxBacklog` | mensagens esperando no outbox de um serviço por 5 minutos seguidos | crítico | O relay parou ou a fila está inacessível: conferir o log do relay e a credencial da AWS |
+| `SagaCompensationsSpike` | mais de 10 compensações em 30 minutos | aviso | Ver o motivo no painel da saga; `STEP_FAILED` em massa é falha técnica |
+| `SagaStepStuck` | uma etapa sem compensação possível esgotou as tentativas | crítico | O log de erro do OS traz o id da ordem, que precisa de uma pessoa |
+
+Alguns limites merecem explicação:
+
+- **Uma falha isolada não dispara.** Uma mensagem volta a cada 30 segundos (o tempo de visibilidade da
+  fila) e só vai para a fila de descarte na quinta falha. Uma falha seguida de sucesso é a fila fazendo seu
+  trabalho. Duas falhas do mesmo tipo em 10 minutos já indicam o caminho da descarte.
+- **Qualquer backlog parado conta, não só um backlog grande.** O relay publica em cerca de um segundo, então
+  uma mensagem esperando 5 minutos indica que nada está sendo publicado, seja qual for o volume. Com o volume
+  da demonstração, um limite de 20 mensagens nunca seria atingido.
+- **O limite de compensações é um número de partida** para o volume da demonstração, não uma linha de base
+  medida.
+- **A primeira etapa travada dispara.** Contador com rótulo nasce valendo 1, e o `increase()` não vê a
+  passagem de "ausente" para 1. O OS cria em zero todas as séries da saga ao subir, e o teste
+  `the first stuck step alerts at once` cobre esse caso.
+
 ---
 
 ## Deploy
