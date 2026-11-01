@@ -1,3 +1,24 @@
+# One ApplicationDown rule per service. A single sum over the three would only
+# fire with all of them down, and one service down already freezes the saga.
+locals {
+  application_down_rules = [for name, service in local.services : {
+    alert  = "ApplicationDown"
+    expr   = "(sum(up{job=\"observability/car-repair-shop\", namespace=\"${service.namespace}\"}) or vector(0)) == 0"
+    for    = "1m"
+    labels = { severity = "critical", service = name }
+    annotations = {
+      summary     = "Servico ${name} fora do ar"
+      description = "Nenhum alvo do namespace ${service.namespace} esta respondendo ao scrape."
+
+      # `up == 0` alone misses the likeliest case. If the pods disappear the
+      # PodMonitor finds no target, the series stops existing, and an
+      # expression over a missing series yields nothing: the alert stays silent
+      # exactly when it should fire. `or vector(0)` gives absence a value.
+      nota = "a ausencia de serie conta como fora do ar, nao so o scrape falhando"
+    }
+  }]
+}
+
 # Brings Prometheus Operator, Prometheus, Alertmanager, Grafana,
 # kube-state-metrics and node-exporter in one release. The last two cover
 # Kubernetes resource usage without writing any instrumentation.
@@ -29,7 +50,8 @@ resource "helm_release" "kube_prometheus_stack" {
         groups = [
           {
             name = "car-repair-shop"
-            rules = [
+            # flatten keeps the per-service rules in the same list as the rest.
+            rules = flatten([
               {
                 alert = "ServiceOrderProcessingFailures"
                 expr  = "sum(rate(integration_failures_total[5m])) > 0"
@@ -45,26 +67,12 @@ resource "helm_release" "kube_prometheus_stack" {
                   janela      = "for=1m encurtado para demonstracao; em producao seria 5m"
                 }
               },
+              local.application_down_rules,
               {
-                alert  = "ApplicationDown"
-                expr   = "(sum(up{job=\"observability/car-repair-shop\"}) or vector(0)) == 0"
-                for    = "1m"
-                labels = { severity = "critical" }
-                annotations = {
-                  summary     = "Aplicacao fora do ar"
-                  description = "Nenhum alvo da aplicacao esta respondendo ao scrape."
-
-                  # `up == 0` alone misses the likeliest case. If the pods
-                  # disappear the PodMonitor finds no target, the series stops
-                  # existing, and an expression over a missing series yields
-                  # nothing: the alert stays silent exactly when it should fire.
-                  # `or vector(0)` gives absence a value.
-                  nota = "a ausencia de serie conta como fora do ar, nao so o scrape falhando"
-                }
-              },
-              {
-                alert  = "HighErrorRate"
-                expr   = "sum(rate(http_request_duration_seconds_count{status_code=~\"5..\"}[5m])) / clamp_min(sum(rate(http_request_duration_seconds_count[5m])), 0.001) > 0.05"
+                alert = "HighErrorRate"
+                # By namespace: a busy service would otherwise dilute the
+                # errors of a quiet one below the threshold.
+                expr   = "sum by (namespace) (rate(http_request_duration_seconds_count{status_code=~\"5..\"}[5m])) / clamp_min(sum by (namespace) (rate(http_request_duration_seconds_count[5m])), 0.001) > 0.05"
                 for    = "2m"
                 labels = { severity = "critical" }
                 annotations = {
@@ -74,7 +82,7 @@ resource "helm_release" "kube_prometheus_stack" {
               },
               {
                 alert  = "HighApiLatency"
-                expr   = "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m]))) > 1"
+                expr   = "histogram_quantile(0.95, sum by (namespace, le) (rate(http_request_duration_seconds_bucket[5m]))) > 1"
                 for    = "5m"
                 labels = { severity = "warning" }
                 annotations = {
@@ -82,7 +90,7 @@ resource "helm_release" "kube_prometheus_stack" {
                   description = "O percentil 95 das requisicoes passou de 1s por 5 minutos."
                 }
               },
-            ]
+            ])
           }
         ]
       }
@@ -127,11 +135,20 @@ resource "helm_release" "kube_prometheus_stack" {
         {
           name = "car-repair-shop"
 
-          # The application lives in another namespace. Without this Prometheus
+          # The services live in other namespaces. Without this Prometheus
           # searches only its own, finds nothing and reports no error: the
-          # target simply never appears and the dashboard is empty.
-          namespaceSelector = { matchNames = [local.services.os.namespace] }
-          selector          = { matchLabels = { app = local.services.os.k8s_service } }
+          # target simply never appears and the dashboard is empty. Taken from
+          # the services map, so a new service is scraped without a change here.
+          namespaceSelector = { matchNames = [for service in values(local.services) : service.namespace] }
+
+          # The labels every service's API pods share. `app` differs per
+          # service, and the migration Job's pods are not `component: api`.
+          selector = {
+            matchLabels = {
+              "app.kubernetes.io/part-of"   = "fiap-tech-challenge"
+              "app.kubernetes.io/component" = "api"
+            }
+          }
 
           podMetricsEndpoints = [
             {
