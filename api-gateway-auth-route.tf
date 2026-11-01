@@ -11,7 +11,7 @@ resource "aws_apigatewayv2_integration" "auth_lambda" {
 
   api_id           = aws_apigatewayv2_api.main.id
   integration_type = "AWS_PROXY"
-  integration_uri  = data.terraform_remote_state.lambda.outputs.auth_lambda_invoke_arn
+  integration_uri  = data.terraform_remote_state.lambda[0].outputs.auth_lambda_invoke_arn
 
   # 2.0 is the format the function expects: the handler reads event.body and
   # returns { statusCode, headers, body }.
@@ -37,7 +37,7 @@ resource "aws_lambda_permission" "api_gateway_invoke_auth" {
 
   statement_id  = "AllowInvokeFromApiGateway"
   action        = "lambda:InvokeFunction"
-  function_name = data.terraform_remote_state.lambda.outputs.auth_lambda_function_name
+  function_name = data.terraform_remote_state.lambda[0].outputs.auth_lambda_function_name
   principal     = "apigateway.amazonaws.com"
 
   # Restricted to this gateway and route: without source_arn, any API Gateway in
