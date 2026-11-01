@@ -20,6 +20,8 @@ locals {
   routes = merge([
     for service, keys in var.public_routes : { for key in keys : key => service }
   ]...)
+
+  payment_notifications_route = "POST /payments/notifications"
 }
 
 # Each NLB is born from a service's Kubernetes Service, not from a Terraform
@@ -107,6 +109,18 @@ resource "aws_apigatewayv2_stage" "default" {
       route_key              = aws_apigatewayv2_route.customer_lookup[0].route_key
       throttling_rate_limit  = var.lookup_throttling_rate_limit
       throttling_burst_limit = var.lookup_throttling_burst_limit
+    }
+  }
+
+  # Same reasoning for the payment notifications, which only exist when the
+  # billing service has routes.
+  dynamic "route_settings" {
+    for_each = var.enable_gateway_routes && contains(keys(local.routes), local.payment_notifications_route) ? [1] : []
+
+    content {
+      route_key              = aws_apigatewayv2_route.public[local.payment_notifications_route].route_key
+      throttling_rate_limit  = var.payment_notifications_throttling_rate_limit
+      throttling_burst_limit = var.payment_notifications_throttling_burst_limit
     }
   }
 
