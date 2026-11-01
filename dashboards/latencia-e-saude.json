@@ -12,6 +12,32 @@
     "from": "now-1h",
     "to": "now"
   },
+  "templating": {
+    "list": [
+      {
+        "type": "query",
+        "name": "namespace",
+        "label": "Serviço",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(up{job=\"observability/car-repair-shop\"}, namespace)",
+          "refId": "namespace"
+        },
+        "definition": "label_values(up{job=\"observability/car-repair-shop\"}, namespace)",
+        "refresh": 2,
+        "current": {
+          "text": "car-repair-shop",
+          "value": "car-repair-shop"
+        },
+        "includeAll": false,
+        "multi": false,
+        "hide": 0
+      }
+    ]
+  },
   "panels": [
     {
       "type": "stat",
@@ -28,7 +54,7 @@
       },
       "targets": [
         {
-          "expr": "avg(up{job=\"observability/car-repair-shop\"}) * 100",
+          "expr": "avg(up{job=\"observability/car-repair-shop\", namespace=\"$namespace\"}) * 100",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -92,7 +118,7 @@
       },
       "targets": [
         {
-          "expr": "sum(kube_pod_status_ready{namespace=\"car-repair-shop\",condition=\"true\"})",
+          "expr": "sum(kube_pod_status_ready{namespace=\"$namespace\",condition=\"true\"})",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -134,7 +160,7 @@
       },
       "targets": [
         {
-          "expr": "((sum(rate(http_request_duration_seconds_count{status_code=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(http_request_duration_seconds_count[5m])), 0.0001)) * 100",
+          "expr": "((sum(rate(http_request_duration_seconds_count{namespace=\"$namespace\", status_code=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(http_request_duration_seconds_count{namespace=\"$namespace\"}[5m])), 0.0001)) * 100",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -196,7 +222,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{namespace=\"$namespace\"}[5m])))",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -238,7 +264,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(http_request_duration_seconds_count[5m]))",
+          "expr": "sum(rate(http_request_duration_seconds_count{namespace=\"$namespace\"}[5m]))",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -280,7 +306,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(http_request_duration_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(http_request_duration_seconds_bucket{namespace=\"$namespace\"}[5m])))",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -328,7 +354,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.5, sum by (le, route) (rate(http_request_duration_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.5, sum by (le, route) (rate(http_request_duration_seconds_bucket{namespace=\"$namespace\"}[5m])))",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -337,7 +363,7 @@
           "legendFormat": "p50 {{route}}"
         },
         {
-          "expr": "histogram_quantile(0.99, sum by (le, route) (rate(http_request_duration_seconds_bucket[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (le, route) (rate(http_request_duration_seconds_bucket{namespace=\"$namespace\"}[5m])))",
           "refId": "B",
           "datasource": {
             "type": "prometheus",
@@ -385,7 +411,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (route, status_code) (rate(http_request_duration_seconds_count[5m]))",
+          "expr": "sum by (route, status_code) (rate(http_request_duration_seconds_count{namespace=\"$namespace\"}[5m]))",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -433,7 +459,7 @@
       },
       "targets": [
         {
-          "expr": "((sum(rate(http_request_duration_seconds_count{status_code=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(http_request_duration_seconds_count[5m])), 0.0001)) * 100",
+          "expr": "((sum(rate(http_request_duration_seconds_count{namespace=\"$namespace\", status_code=~\"5..\"}[5m])) or vector(0)) / clamp_min(sum(rate(http_request_duration_seconds_count{namespace=\"$namespace\"}[5m])), 0.0001)) * 100",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -481,7 +507,7 @@
       },
       "targets": [
         {
-          "expr": "up{job=\"observability/car-repair-shop\"}",
+          "expr": "up{job=\"observability/car-repair-shop\", namespace=\"$namespace\"}",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
@@ -529,7 +555,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(http_request_duration_seconds_bucket{route=~\"/health|/ready\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(http_request_duration_seconds_bucket{namespace=\"$namespace\", route=~\"/health|/ready\"}[5m])))",
           "refId": "A",
           "datasource": {
             "type": "prometheus",

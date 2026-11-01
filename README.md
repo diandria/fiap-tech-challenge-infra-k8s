@@ -215,7 +215,8 @@ sozinho. Não há passo manual de importação.
 |---|---|
 | Volume de ordens de serviço | Contagem, taxa de abertura, distribuição diária |
 | Tempo até cada status | p50, p95, média e heatmap por transição |
-| Latência, healthchecks e uptime | p50/p95/p99 por rota, RPS, taxa de erro 5xx, uptime |
+| Saga da ordem de serviço | Respostas por tipo e resultado, compensações por motivo, backlog do outbox e falhas de consumo por serviço, e os traces de uma OS pelo `service_order.id` |
+| Latência, healthchecks e uptime | p50/p95/p99 por rota, RPS, taxa de erro 5xx, uptime; o seletor **Serviço** escolhe o namespace |
 | Recursos do Kubernetes | CPU e memória contra requests e limites, réplicas contra o HPA |
 
 As regras de alerta e o `PodMonitor` dos serviços são **valores do chart**, no `metrics.tf`,
