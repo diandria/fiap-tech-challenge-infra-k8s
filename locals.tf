@@ -25,5 +25,12 @@ locals {
       k8s_service = "execution-api"
       registry    = "car-repair-shop-execution"
     }
+    # The payment provider simulator the Billing Service charges through. Not
+    # part of the saga, but deployed, scraped and routed like the others.
+    payment = {
+      namespace   = "car-repair-shop-payment"
+      k8s_service = "payment-api"
+      registry    = "car-repair-shop-payment"
+    }
   }
 }
