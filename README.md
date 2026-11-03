@@ -328,7 +328,7 @@ do serviço dono dela (`public_routes`, em `variables.tf`):
 | Serviço | Rotas |
 |---|---|
 | OS | `/auth/login`, `/auth/register`, `/customers`, `/vehicles`, `/services`, `/items`, `/service-orders`, `/docs`, `/health`, `/ready` |
-| Billing | `GET` e `PATCH /service-orders/{id}/budget`, `POST /payments/notifications`, `POST /payments/mock/{serviceOrderId}` |
+| Billing | `GET` e `PATCH /service-orders/{id}/budget`, `POST /payments/notifications` |
 | Execution | `/executions` e tudo abaixo |
 | Payment | `GET /checkout/{preferenceId}` e `POST /checkout/{preferenceId}/pay` |
 
@@ -336,12 +336,8 @@ As rotas de orçamento do Billing ficam dentro do prefixo `/service-orders` do O
 HTTP escolhe primeiro a rota que casa por completo, mesmo com variável simples, e só depois a de variável
 gulosa (`{proxy+}`). O cliente continua chamando o mesmo caminho; muda só quem responde.
 
-A rota de notificação do Mercado Pago é pública, porque quem chama é o provedor. A proteção dela é a
+A rota de notificação de pagamento é pública, porque quem chama é o provedor. A proteção dela é a
 assinatura conferida pelo Billing, mais um limite próprio de requisições no gateway (10 por segundo).
-
-A rota `POST /payments/mock/{serviceOrderId}` só responde quando o Billing roda com o provedor simulado
-(`PAYMENT_PROVIDER=mock`): ela faz o papel do cliente pagando e exige o token de administrador. Com o
-Mercado Pago ligado, o Billing não monta essa rota e a chamada termina em 404.
 
 O Payment Service é o simulador do provedor de pagamento, que a coordenação orientou criar no lugar do
 Mercado Pago. Só o lado do cliente fica no gateway: abrir o link da cobrança e pagar. O token, a criação da
