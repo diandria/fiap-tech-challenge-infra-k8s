@@ -158,16 +158,12 @@ variable "public_routes" {
     # changes. A full match with a path variable takes priority over the
     # greedy ANY /service-orders/{proxy+} of the OS Service, so these two
     # reach the billing service and every other order path stays where it was.
-    #
-    # The simulated payment route only answers while billing runs with the
-    # mock provider; with Mercado Pago the service does not mount it and the
-    # call ends in 404. It is listed so the payment step of the flow goes
-    # through the same entry point as the rest, and it requires the admin token.
+    # The customer pays at the payment service's checkout, not here: billing
+    # only receives the provider's signed notification.
     billing = [
       "GET /service-orders/{id}/budget",
       "PATCH /service-orders/{id}/budget",
       "POST /payments/notifications",
-      "POST /payments/mock/{serviceOrderId}",
     ]
 
     execution = [
