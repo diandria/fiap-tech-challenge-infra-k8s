@@ -174,6 +174,14 @@ variable "public_routes" {
       "ANY /executions",
       "ANY /executions/{proxy+}",
     ]
+
+    # Only the customer's side of the payment service: opening the checkout
+    # link and paying it. Its token, checkout and payment routes are for the
+    # Billing Service, which calls them inside the cluster.
+    payment = [
+      "GET /checkout/{preferenceId}",
+      "POST /checkout/{preferenceId}/pay",
+    ]
   }
 }
 

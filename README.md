@@ -20,7 +20,8 @@ controlado e de instrumentação que mostre o que está acontecendo. Este reposi
 | Tempo | tracing distribuído |
 | API Gateway e VPC Link | ponto único de entrada, com throttling |
 | Filas SQS FIFO da saga, cada uma com fila de descarte | comunicação assíncrona entre os três serviços |
-| Um namespace e um repositório ECR por serviço (OS, Billing e Execution) | isolamento entre os serviços no mesmo cluster |
+| Um namespace e um repositório ECR por serviço (OS, Billing, Execution e Payment) | isolamento entre os serviços no mesmo cluster |
+| Credenciais do Billing no Payment Service, no SSM | token e assinatura do pagamento simulado, sem cópia manual |
 
 ## O que este repositório **não** faz
 
@@ -329,6 +330,7 @@ do serviço dono dela (`public_routes`, em `variables.tf`):
 | OS | `/auth/login`, `/auth/register`, `/customers`, `/vehicles`, `/services`, `/items`, `/service-orders`, `/docs`, `/health`, `/ready` |
 | Billing | `GET` e `PATCH /service-orders/{id}/budget`, `POST /payments/notifications`, `POST /payments/mock/{serviceOrderId}` |
 | Execution | `/executions` e tudo abaixo |
+| Payment | `GET /checkout/{preferenceId}` e `POST /checkout/{preferenceId}/pay` |
 
 As rotas de orçamento do Billing ficam dentro do prefixo `/service-orders` do OS sem conflito: o API Gateway
 HTTP escolhe primeiro a rota que casa por completo, mesmo com variável simples, e só depois a de variável
@@ -340,6 +342,13 @@ assinatura conferida pelo Billing, mais um limite próprio de requisições no g
 A rota `POST /payments/mock/{serviceOrderId}` só responde quando o Billing roda com o provedor simulado
 (`PAYMENT_PROVIDER=mock`): ela faz o papel do cliente pagando e exige o token de administrador. Com o
 Mercado Pago ligado, o Billing não monta essa rota e a chamada termina em 404.
+
+O Payment Service é o simulador do provedor de pagamento, que a coordenação orientou criar no lugar do
+Mercado Pago. Só o lado do cliente fica no gateway: abrir o link da cobrança e pagar. O token, a criação da
+cobrança e a consulta do pagamento são do Billing, que os chama pelo endereço interno do cluster. As
+credenciais do Billing nesse serviço, o client id, o client secret e o segredo que assina os avisos de
+pagamento, são geradas aqui (`payment-credentials.tf`) e publicadas no SSM em `/car-repair-shop/payment/*`.
+Os CDs dos dois serviços leem os mesmos parâmetros.
 
 **Ordem de aplicação:** as rotas do Billing e do Execution só podem entrar depois do deploy dos dois
 serviços (o `plan` precisa encontrar os NLBs deles) e depois do deploy do OS que liga a saga. Antes disso, a
