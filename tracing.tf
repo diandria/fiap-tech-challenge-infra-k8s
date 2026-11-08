@@ -23,13 +23,15 @@ resource "helm_release" "tempo" {
 
       retention = "168h"
 
-      # 1Gi, not 512Mi: with the previous limit Tempo was OOMKilled on startup
-      # in a loop, 8 restarts in 56 minutes, never becoming ready. The CD failed
-      # waiting for observability, and the application's spans were dropped
-      # silently, with nothing in its log indicating loss.
+      # 2Gi: with 512Mi Tempo was OOMKilled on startup, and with 1Gi it was
+      # OOMKilled compacting the blocks of a five-minute load test, in a loop,
+      # so the traces disappeared exactly when there was traffic to look at.
+      # Each loss is silent: the services keep exporting spans and log nothing.
+      # The nodes have the room: a t3.large gives 7Gi, and the cluster uses
+      # under half of it after a load test.
       resources = {
-        requests = { memory = "512Mi", cpu = "100m" }
-        limits   = { memory = "1Gi" }
+        requests = { memory = "1Gi", cpu = "100m" }
+        limits   = { memory = "2Gi" }
       }
     }
 
